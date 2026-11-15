@@ -199,11 +199,12 @@ int Canvas_startup(Canvas *cv)
 	}
 
 	/* text columns for the various boxes (7-px font advance) */
-	cv->textCols[1] = (cv->viewW - 0x16) / 7;
-	cv->textCols[0] = (cv->viewW - 0x1d) / 7;
-	cv->textCols[2] = (cv->viewW - 0xb) / 7;
-	cv->textCols[3] = (cv->viewW - 9) / 7;
-	cv->textCols[4] = (cv->viewW - 0x21) / 7;
+	int uiW = cv->viewW > 176 ? 176 : cv->viewW;
+	cv->textCols[1] = (uiW - 0x16) / 7;
+	cv->textCols[0] = (uiW - 0x1d) / 7;
+	cv->textCols[2] = (uiW - 0xb) / 7;
+	cv->textCols[3] = (uiW - 9) / 7;
+	cv->textCols[4] = (uiW - 0x21) / 7;
 	cv->largeScreen = cv->viewW > 175;
 	Hud_startup(cv->hud, cv->viewW > 175);
 
