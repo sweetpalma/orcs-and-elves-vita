@@ -11,9 +11,20 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* The supported build: Orcs & Elves II, BREW, EN, EA (Oct 2007). */
-#define MOD_EXPECTED_SIZE 292116u
-#define MOD_EXPECTED_CRC32 0x1631c7f1u
+/* Supported builds: Orcs & Elves I and II */
+#define MOD_EXPECTED_SIZE_OE1  198280u
+#define MOD_EXPECTED_CRC32_OE1 0xac062b45u
+
+#define MOD_EXPECTED_SIZE_OE2  292116u
+#define MOD_EXPECTED_CRC32_OE2 0x1631c7f1u
+
+#if defined(GAME_OE1)
+#define MOD_EXPECTED_SIZE      MOD_EXPECTED_SIZE_OE1
+#define MOD_EXPECTED_CRC32     MOD_EXPECTED_CRC32_OE1
+#else
+#define MOD_EXPECTED_SIZE      MOD_EXPECTED_SIZE_OE2
+#define MOD_EXPECTED_CRC32     MOD_EXPECTED_CRC32_OE2
+#endif
 
 typedef struct ModData {
   uint8_t *data;

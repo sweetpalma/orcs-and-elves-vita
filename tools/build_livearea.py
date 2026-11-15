@@ -41,7 +41,7 @@ def extract_bar_resource(bar_bytes: bytes, target_id: int) -> bytes:
             if len(payload) >= 18 and payload[:2] == b"\x1f\x8b":
                 return gzip.decompress(payload)
             return payload
-    raise RuntimeError(f"Resource {target_id} not found in orcsandelves2.bar")
+    raise RuntimeError(f"Resource {target_id} not found in BAR archive")
 
 
 def read_bmp8(data: bytes):
@@ -131,15 +131,18 @@ def write_png8(path: Path, w: int, h: int, rgb_rows):
     path.write_bytes(png)
 
 
-def build_livearea_assets(bar_path: Path, output_dir: Path):
+def build_livearea_assets(bar_path: Path, output_dir: Path, game: str = None):
     if not bar_path.is_file():
-        raise RuntimeError(f"Cannot find orcsandelves2.bar at {bar_path}")
+        raise RuntimeError(f"Cannot find BAR file at {bar_path}")
 
     bar_bytes = bar_path.read_bytes()
-    bmp_3034 = extract_bar_resource(bar_bytes, 3034)
-    bmp_3037 = extract_bar_resource(bar_bytes, 3037)
-    map_w, map_h, map_rows = read_bmp8(bmp_3034)
-    logo_w, logo_h, logo_rows = read_bmp8(bmp_3037)
+    is_oe1 = game == "oe1" if game else ("orcsandelves.bar" in bar_path.name)
+    map_id = 5040 if is_oe1 else 3034
+    logo_id = 5021 if is_oe1 else 3037
+    bmp_map = extract_bar_resource(bar_bytes, map_id)
+    bmp_logo = extract_bar_resource(bar_bytes, logo_id)
+    map_w, map_h, map_rows = read_bmp8(bmp_map)
+    logo_w, logo_h, logo_rows = read_bmp8(bmp_logo)
 
     def render_canvas(cw: int, ch: int, logo_scale: int, draw_logo: bool = True):
         crop_h = min(map_h, max(1, round(map_w * ch / cw)))
@@ -252,16 +255,22 @@ def build_livearea_assets(bar_path: Path, output_dir: Path):
 def parse_args():
     parser = argparse.ArgumentParser(description="Generate PS Vita LiveArea assets into src/vita/assets")
     parser.add_argument(
+        "--game",
+        choices=["oe1", "oe2"],
+        default="oe2",
+        help="Game edition (oe1 or oe2, default: oe2)",
+    )
+    parser.add_argument(
         "--data-dir",
         type=Path,
         default=None,
-        help="Directory containing orcsandelves2.bar (default: auto-detected from data/ or OE2_DATA_DIR)",
+        help="Directory containing game data (default: auto-detected from data/ or OE2_DATA_DIR)",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=DEFAULT_OUTPUT_DIR,
-        help="Target output directory (default: src/vita/assets)",
+        default=None,
+        help="Target output directory (default: src/vita/assets/<game>)",
     )
     return parser.parse_args()
 
@@ -269,13 +278,15 @@ def parse_args():
 def main():
     args = parse_args()
     data_dir = args.data_dir or resolve_data_dir()
-    bar_path = data_dir / "orcsandelves2.bar"
+    bar_name = "orcsandelves.bar" if args.game == "oe1" else "orcsandelves2.bar"
+    bar_path = data_dir / bar_name
     if not bar_path.is_file():
         raise RuntimeError(
-            f"Could not find orcsandelves2.bar in {data_dir}.\n"
+            f"Could not find {bar_name} in {data_dir}.\n"
             "Please provide a valid data directory with --data-dir <dir> or OE2_DATA_DIR."
         )
-    build_livearea_assets(bar_path, args.output_dir)
+    output_dir = args.output_dir or (DEFAULT_OUTPUT_DIR / args.game)
+    build_livearea_assets(bar_path, output_dir, game=args.game)
 
 
 if __name__ == "__main__":

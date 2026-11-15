@@ -2,47 +2,54 @@
 
 This document details the architectural layout, core subsystems, execution lifecycle, asset formats, and platform abstractions in the project source tree.
 
----
-
 ## 1. Directory Layout
 
 ```
 .
 ├── docs/                   # Technical documentation and findings
+│   ├── ARCHITECTURE.md     # Codebase architecture & subsystem guide
+│   ├── ENVIRONMENT.md      # Environment variables, build options & CLI guide
+│   ├── LIGHTING.md         # Dynamic lighting, ray shadows & AO deep-dive
+│   └── RESOURCES.md        # BREW .bar & .mod binary format specifications
 ├── data/                   # Original game assets (.bar, .mod) - ignored by Git
-├── tools/                  # Build scripts, asset decoders, font generators, vitasdk vendor
-│   ├── build_pc.py         # Automated PC builds
-│   └── build_vita.py       # Complete Vita VPK package pipeline
+├── tools/                  # Build scripts, asset decoders, livearea generator, vitasdk vendor
+│   ├── build_pc.py         # Automated PC builds (oe1, oe2, all)
+│   ├── build_vita.py       # Complete Vita VPK package pipeline (oe1, oe2, all)
+│   ├── build_livearea.py   # LiveArea asset extractor & generator
+│   └── oe2data.py          # Asset inspector and data extractor CLI
 └── src/
-    ├── engine/             # Faithful C reconstruction of BREW 7.0.41 game engine
-    │   ├── src/
-    │   │   ├── game/       # Simulation, entities, scripts, menus, software rasterizer
-    │   │   ├── bar.c/.h    # BREW .bar archive reader & decompressor
-    │   │   ├── moddata.c/.h# Static table parser from .mod data segment
-    │   │   ├── pmd.c/.h    # QCELP audio decoder (PC/tools)
-    │   │   └── main.c      # Standalone/PC entry point & test harness (OE2_PIPE)
+    ├── engine/             # C reconstruction of BREW 7.0.41 game engines
+    │   ├── CMakeLists.txt  # Engine & toolchain build configuration
+    │   └── src/
+    │       ├── oe1/        # Orcs & Elves simulation, menus, entities, rendering
+    │       ├── oe2/        # Orcs & Elves II simulation, menus, entities, rendering
+    │       ├── bar.c/.h    # BREW .bar archive reader & decompressor
+    │       ├── moddata.c/.h# Static table parser from .mod data segment
+    │       ├── pmd.c/.h    # Audio CMF/PMD resource parser
+    │       ├── qcelp.c/.h  # Standalone software QCELP-13k audio decoder
+    │       ├── platform_sdl.c # SDL2 platform event loop and audio sink
+    │       └── main.c      # Standalone/PC entry point & test harness (OE_PIPE)
     ├── host/               # Remastered presentation bridge (lighting, shaders, framebuffers)
     │   ├── lighting.c/.h   # Dynamic lighting, ray-cast shadows, ambient occlusion
     │   ├── lighting_gpu.inc# GPU/compute shader export helpers
     │   ├── presentation.c  # View and effect callbacks
-    │   └── standalone_bridge.c # Classic/Remastered mode toggle, tick rate controller
+    │   └── standalone_bridge.c # Classic/Remastered mode toggle, frame presentation
     └── vita/               # PlayStation Vita platform backend
         ├── main_vita.c     # Vita main loop, controller input polling
         ├── platform_vita.c # SDL2 GXM display, SceCtrl handling, SceAudio, save redirection
-        └── pmd_vita.c      # Fast streaming loader for pre-decoded PCM audio
+        └── assets/         # LiveArea template icons and backgrounds
 ```
 
----
+## 2. Engine Subsystem (`src/engine/src/`)
 
-## 2. Engine Subsystem (`src/engine/src/game/`)
+The gameplay foundation is reconstructed directly from the disassembled binary of id Software / Fountainhead Entertainment's BREW releases (version 7.0.41).
 
-The gameplay foundation is reconstructed directly from the disassembled binary of id Software / Fountainhead Entertainment's BREW release (version 7.0.41).
+### 2.1. The Simulation Step & Timing
 
-### 2.1. The 40 ms Simulation Step
-
-- The native game operates on a fixed **40 ms step** (`25 Hz` simulation tick).
+- **Orcs & Elves II (`oe2`):** Operates on a fixed **40 ms step** (`25 Hz` simulation tick).
+- **Orcs & Elves (`oe1`):** Operates on a fixed **15 ms step** (~`66.7 Hz` simulation tick).
 - `app.c`: `Applet_HandleEvent` and `Canvas_step` drive world updates.
-- In `standalone_bridge.c`, `OE2_getTickMs()` allows switching between the standard `40 ms` step and an unlocked/fast mode (`16 ms` / `~60 Hz`).
+- In `standalone_bridge.c`, `OE_getTickMs()` supplies the authentic fixed simulation step for each game.
 - Simulation timing is strictly decoupled from presentation: turn animations, combat dice rolls, projectile trajectories, and tile triggers run synchronously per tick.
 
 ### 2.2. Coordinate Systems & Units
@@ -80,12 +87,10 @@ The core UI and gameplay states are managed in `Canvas.state`:
 
 ### 2.4. Software Renderer (`render.c`, `render_span.c`, `render_sprite.c`)
 
-- **BSP Traversal:** Walls and sector leaves are stored in a Binary Space Partitioning tree loaded from `.bsp` files (`m01.bsp`..`m08.bsp`, `hub.bsp`).
+- **BSP Traversal:** Walls and sector leaves are stored in a Binary Space Partitioning tree loaded from `.bsp` files (OE1: `6000..6011`; OE2: `1001..1007`, `1008`).
 - **Wall Projection:** `Render_clipSegmentNear` clips lines against the camera near plane; column top/bottom bounds are projected via fixed-point division (`render->maxX16 / depth`).
 - **Span Rasterization:** Wall columns and floor/ceiling spans are rendered in software (`render_span.c`). In Remastered mode, hooks (`BrewLight_floor`, `BrewLight_span`, `BrewLight_weapon`) log pixel surface coordinates and surface normals into a surface buffer (`Surface surfaces[]`).
 - **Billboard Sprites:** Sprites (monsters, NPCs, items, decorations) are projected and sorted by distance in `render_sprite.c`. Their surface kind is tagged as `kind = 3` (billboard quad).
-
----
 
 ## 3. Host Presentation Bridge (`src/host/`)
 
@@ -108,7 +113,7 @@ The bridge wraps the software-rasterized framebuffer and enhances it without mut
 ```
 
 - **`standalone_bridge.c`**:
-  - Exposes `OE2_captureWorld()` and `OE2_presentFrame()`.
+  - Exposes `OE_captureWorld()` and `OE_presentFrame()`.
   - Maintains `remasteredMode` boolean flag (toggleable in real time).
   - Handles letterboxing / aspect ratio correction (e.g. 16:9 widescreen or original 4:3 / phone ratios).
 - **`lighting.c`**:
@@ -119,28 +124,28 @@ The bridge wraps the software-rasterized framebuffer and enhances it without mut
     - Ambient occlusion and contact shading.
     - Detailed breakdown in [LIGHTING.md](LIGHTING.md).
 
----
-
 ## 4. Asset Architecture (`data/`)
 
-The game relies on two primary data files:
+Each game edition relies on two primary data files:
+- **Orcs & Elves (`oe1`):** `orcsandelves.bar` and `orcsandelves.mod`
+- **Orcs & Elves II (`oe2`):** `orcsandelves2.bar` and `orcsandelves2.mod`
 
 ### 4.1. The Resource Archive (`.bar`)
 
-- Standard BREW resource archive (`orcsandelves.bar`).
-- Read by `src/engine/src/bar.c`.
-- **Header:**
+- Standard Qualcomm BREW resource archive.
+- Read and decompressed by `src/engine/src/bar.c`.
+- **Header Structure:**
   - `0x06` (16-bit): Number of resource types (`ntypes`).
   - `0x08` (32-bit): Type directory offset.
   - `0x10` (32-bit): Resource table offset.
   - `0x18` (32-bit): Resource table end.
 - Individual entries may be uncompressed or GZIP-compressed (identified by magic bytes `0x1f 0x8b`).
-- Resources include textures (`7000..7512`), wall bitmaps (`7512..8000`), sprite graphics (`9000+`), maps (`6000..6008`), and palette/mapping metadata (`5005..5007`).
+- Resources include textures, wall bitmaps, billboard sprite graphics, map BSP trees, and palette/mapping metadata.
 
 ### 4.2. Bytecode & Static Data (`.mod`)
 
-- Compiled ARM/BREW module file (`orcsandelves.mod`).
-- `src/engine/src/moddata.c` maps directly into this file to read:
+- Compiled ARM/BREW executable module file.
+- `src/engine/src/moddata.c` maps directly into this file's data segment to read:
   - Game entity definitions, monster attributes, health, and armor tables.
   - Dialogue strings, quest logs, and script event command tables.
   - Overworld travel node paths (`MOD_TRAVEL_NODES`).
@@ -151,8 +156,6 @@ The game relies on two primary data files:
 - Both PC and PS Vita embed a standalone, zero-dependency QCELP-13k audio decoder (`src/engine/src/qcelp.c`).
 - Audio is decoded on demand directly from `.bar` in memory and cached on first play, requiring no offline preprocessing or external audio files.
 
----
-
 ## 5. PlayStation Vita Platform Adapter (`src/vita/`)
 
 The Vita port directly binds the engine to Sony PlayStation Vita hardware libraries:
@@ -162,5 +165,12 @@ The Vita port directly binds the engine to Sony PlayStation Vita hardware librar
   - Render target: Native OLED/LCD resolution (`960×544`).
   - Frame presentation stretches the 3D viewport while maintaining the original UI frame scaling.
 - **Controls (`platform_vita.c`):**
+  - **D-Pad / Left Stick:** 4-way step movement and grid turning.
+  - **L / R Triggers:** Strafe left / right.
+  - **Cross (`X`):** Attack, interact, inspect, or confirm menu selections.
+  - **Circle (`○`):** Cancel or close submenus.
+  - **Triangle (`△`):** Cycle weapons or fast-forward/advance dialogues.
+  - **Square (`□`):** Pass / skip turn.
+  - **Start / Select:** In-game pause menu and automap.
 - **Storage:**
-  - Redirection of saves, user preferences, and lighting configuration to `ux0:data/oe2/saves/` (with automatic migration from legacy `ux0:data/oe2/`).
+  - Game state, save slots, and persistent host lighting settings (`LightingCfg`) are isolated per edition at `ux0:data/oe1/` and `ux0:data/oe2/`.

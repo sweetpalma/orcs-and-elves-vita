@@ -28,7 +28,10 @@ int ModData_open(ModData *m, const char *path)
 	}
 	fclose(f);
 	m->size = (size_t)n;
-	if (m->size != MOD_EXPECTED_SIZE || crc32(0L, m->data, (uInt)m->size) != MOD_EXPECTED_CRC32) {
+	uLong crc = crc32(0L, m->data, (uInt)m->size);
+	int ok = (m->size == MOD_EXPECTED_SIZE_OE1 && crc == MOD_EXPECTED_CRC32_OE1) ||
+	         (m->size == MOD_EXPECTED_SIZE_OE2 && crc == MOD_EXPECTED_CRC32_OE2);
+	if (!ok) {
 		ModData_close(m);
 		return -2;
 	}

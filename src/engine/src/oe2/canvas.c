@@ -342,12 +342,10 @@ void Canvas_queueKey(Canvas *canvas, short key, int isRepeat) {
   if (isMoving) {
     if (isRepeat) {
       /* While moving, keep at most one pending repeat; do not flood the queue */
-      if (canvas->numKeys > 0) {
-        canvas->keyQueue[0] = key;
-        canvas->keyIsRepeat[0] = 1;
-        canvas->numKeys = 1;
-        return;
-      }
+      canvas->keyQueue[0] = key;
+      canvas->keyIsRepeat[0] = 1;
+      canvas->numKeys = 1;
+      return;
     } else {
       /* New physical button press while moving: buffer this single latest intended move */
       canvas->keyQueue[0] = key;

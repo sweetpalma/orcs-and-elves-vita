@@ -24,13 +24,20 @@
 int _newlib_heap_size_user = 128 * 1024 * 1024;
 #endif
 
+#if defined(GAME_OE1)
+#define VITA_PRIMARY_DATA_DIR "ux0:data/oe1"
+#define VITA_FALLBACK_DATA_DIR "ux0:data/oe"
+#else
+#define VITA_PRIMARY_DATA_DIR "ux0:data/oe2"
+#endif
+
 static SDL_Window *win;
 static SDL_Renderer *ren;
 static SDL_Texture *tex;
 static uint32_t *rgbaFrame;
 static int scrW, scrH;
 static char dataDir[1024] = "app0:data";
-static char saveDir[1024] = "ux0:data/oe2/saves";
+static char saveDir[1024] = VITA_PRIMARY_DATA_DIR "/saves";
 static int virtClock;
 static uint32_t virtNow;
 
@@ -45,8 +52,8 @@ int Plat_init(int screenW, int screenH, const char *title) {
   scePowerSetGpuXbarClockFrequency(166);
   sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG_WIDE);
   sceIoMkdir("ux0:data", 0777);
-  sceIoMkdir("ux0:data/oe2", 0777);
-  sceIoMkdir("ux0:data/oe2/saves", 0777);
+  sceIoMkdir(VITA_PRIMARY_DATA_DIR, 0777);
+  sceIoMkdir(VITA_PRIMARY_DATA_DIR "/saves", 0777);
 #endif
 
   if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER |
@@ -283,6 +290,12 @@ enum {
   VBTN_SELECT = 1u << 11,
 };
 
+#if defined(GAME_OE1)
+static int adjust_merchant_offer(int delta) {
+  (void)delta;
+  return 0;
+}
+#else
 static int adjust_merchant_offer(int delta) {
   if (!g_app || !g_app->canvas || !g_app->menuSystem || !g_app->menu)
     return 0;
@@ -307,6 +320,7 @@ static int adjust_merchant_offer(int delta) {
   }
   return 1;
 }
+#endif
 
 static int map_vita_button(uint32_t bit, uint32_t rawButtons) {
   int st = (g_app && g_app->canvas) ? g_app->canvas->state : 0;
@@ -563,13 +577,18 @@ void Plat_setDataDir(const char *dir) {
   snprintf(dataDir, sizeof(dataDir), "%s", dir);
 #ifdef __vita__
   if (strncmp(dir, "app0:", 5) == 0)
-  snprintf(saveDir, sizeof(saveDir), "ux0:data/oe2/saves");
-  snprintf(saveDir, sizeof(saveDir), "%s/saves", dir);
+    snprintf(saveDir, sizeof(saveDir), VITA_PRIMARY_DATA_DIR "/saves");
+  else
+    snprintf(saveDir, sizeof(saveDir), "%s/saves", dir);
   ensure_dir("ux0:data");
-  ensure_dir("ux0:data/oe2");
+  ensure_dir(VITA_PRIMARY_DATA_DIR);
   ensure_dir(saveDir);
-  migrate_saves("ux0:data/oe2", saveDir);
-  if (strcmp(dataDir, "ux0:data/oe2") != 0 && strncmp(dataDir, "app0:", 5) != 0)
+  migrate_saves(VITA_PRIMARY_DATA_DIR, saveDir);
+#if defined(VITA_FALLBACK_DATA_DIR)
+  migrate_saves(VITA_FALLBACK_DATA_DIR, saveDir);
+  migrate_saves(VITA_FALLBACK_DATA_DIR "/saves", saveDir);
+#endif
+  if (strcmp(dataDir, VITA_PRIMARY_DATA_DIR) != 0 && strncmp(dataDir, "app0:", 5) != 0)
     migrate_saves(dataDir, saveDir);
 #else
   snprintf(saveDir, sizeof(saveDir), "%s/saves", dir);
@@ -586,7 +605,7 @@ const char *Plat_dataPath(const char *name) {
   struct stat st;
   snprintf(path, sizeof(path), "%s/%s", saveDir, name);
 #ifdef __vita__
-  snprintf(legacy, sizeof(legacy), "ux0:data/oe2/%s", name);
+  snprintf(legacy, sizeof(legacy), "%s/%s", VITA_PRIMARY_DATA_DIR, name);
 #else
   snprintf(legacy, sizeof(legacy), "%s/%s", dataDir, name);
 #endif
@@ -594,6 +613,16 @@ const char *Plat_dataPath(const char *name) {
     ensure_dir(saveDir);
     rename(legacy, path);
   }
+#if defined(VITA_FALLBACK_DATA_DIR) && defined(__vita__)
+  if (stat(path, &st) != 0) {
+    char fallback[2048];
+    snprintf(fallback, sizeof(fallback), "%s/%s", VITA_FALLBACK_DATA_DIR, name);
+    if (stat(fallback, &st) == 0) {
+      ensure_dir(saveDir);
+      rename(fallback, path);
+    }
+  }
+#endif
   return path;
 }
 
@@ -645,7 +674,12 @@ int Plat_fileWrite(const char *name, const void *data, size_t len) {
 int Plat_fileRemove(const char *name) {
   char legacy[2048];
 #ifdef __vita__
-  snprintf(legacy, sizeof(legacy), "ux0:data/oe2/%s", name);
+  snprintf(legacy, sizeof(legacy), "%s/%s", VITA_PRIMARY_DATA_DIR, name);
+#if defined(VITA_FALLBACK_DATA_DIR)
+  char fallback[2048];
+  snprintf(fallback, sizeof(fallback), "%s/%s", VITA_FALLBACK_DATA_DIR, name);
+  remove(fallback);
+#endif
 #else
   snprintf(legacy, sizeof(legacy), "%s/%s", dataDir, name);
 #endif

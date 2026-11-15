@@ -1,3 +1,25 @@
+#if defined(GAME_OE1)
+#include "presentation.h"
+#include "lighting.h"
+#include <stddef.h>
+
+void BrewView_begin(Render *r) { (void)r; }
+void BrewView_line(Render *r,const Line *line) { (void)r; (void)line; }
+void BrewView_sprite(Render *r,int sprite,int frame,int x,int y,int a,int blend,int scale,int flip) {
+	(void)r; (void)sprite; (void)frame; (void)x; (void)y; (void)a; (void)blend; (void)scale; (void)flip;
+}
+void BrewView_effect(Render *r,int type,int value) {
+	if (type == 3) BrewLight_fade(value);
+	(void)r;
+}
+void BrewView_setQuality(int level) { (void)level; }
+const uint32_t *BrewView_lit(const uint32_t *original,int width,int height) {
+	return BrewLight_render(original, width, height);
+}
+const uint32_t *BrewView_gpu(const uint32_t *original,int width,int height) {
+	return BrewLight_gpu(original, width, height);
+}
+#else
 /* Replay only raster commands at a higher resolution. Gameplay, camera updates,
  * visibility discovery, sprite animation and RNG execute once on the BREW core.
  * Replaying never calls Render_renderScene/Render_drawSprite or game handlers. */
@@ -86,3 +108,4 @@ int BrewView_qaSpriteCommand(int index,int field){
  return -1;
 }
 #endif
+#endif /* !defined(GAME_OE1) */

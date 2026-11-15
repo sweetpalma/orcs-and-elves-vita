@@ -13,18 +13,21 @@
 #include "standalone_bridge.h"
 #endif
 
+#if defined(GAME_OE1)
+#define TICK_MS 15
+#define FAST_TICK_MS 5
+#else
 #define TICK_MS 40
-#define FAST_TICK_MS                                                           \
-  16 /* --fast: about one tick per 60 Hz frame (what vsync paced it at before) \
-      */
+#define FAST_TICK_MS 16
+#endif
 
 /* Held keys repeat the way the BREW shell repeated them, not at the desktop's
  * rate: the applet sees one EVT_KEY on press, then (if still held) one every
  * KEY_REPEAT_RATE ms after KEY_REPEAT_START ms. Only the most recently pressed
  * key repeats. The values are the commonly cited BREW shell defaults; handsets
  * could differ and they are not confirmed from an SDK header. */
-#define KEY_REPEAT_START 1500
-#define KEY_REPEAT_RATE 100
+#define KEY_REPEAT_START 320
+#define KEY_REPEAT_RATE 80
 #define KB_AUTOREPEAT                                                          \
   0x40 /* dwParam flag on repeated EVT_KEYs; the applet ignores dwParam */
 
@@ -168,6 +171,21 @@ static void pipe_status(int tick) {
   Canvas *c = a->canvas;
   Hud *h = a->hud;
   Player *p = a->player;
+#if defined(GAME_OE1)
+  Entity *f = p->facing;
+  const char *face = f && f->def && f->def->name ? f->def->name : "";
+  const char *msg = h->numMessages > 0 ? h->messages : "";
+  printf("S %d st %d map %d x %d y %d ang %d hp %d/%d xp %d lvl %d gold %d "
+         "menu %d sel %d nitems %d wand %d "
+         "lock %d %d face '%s' msg '%.*s' w %08x\n",
+         tick, c->state, c->mapId, c->destX >> 6, c->destY >> 6,
+         c->destAngle & 0x3ff, p->ce.health,
+         p->ce.maxHealth, p->xp, p->level, p->gold,
+         a->menuSystem->menuId, a->menuSystem->selected,
+         a->menuSystem->numItems, (int)(p->weapons & 1),
+         (int)strnlen(c->lockTyped, sizeof(c->lockTyped)),
+         c->lockDone, face, 0x40, msg, (unsigned)world_hash());
+#else
   Entity *f = p->facingEntity;
   printf("S %d st %d map %d x %d y %d ang %d hp %d/%d xp %d lvl %d gold %d "
          "menu %d sel %d nitems %d fam %d "
@@ -182,6 +200,7 @@ static void pipe_status(int tick) {
          f && f->def ? f->def->name.buf : "",
          h->numMessages > 0 ? h->messages[0].len : 0,
          h->numMessages > 0 ? h->messages[0].buf : "", world_hash());
+#endif
   fflush(stdout);
 }
 
@@ -201,6 +220,27 @@ static int pipe_tick(int tick) {
     write_ppm(line + 5);
   } else if (!strncmp(line, "tp ", 3)) {
     Canvas *cv = g_app->canvas;
+#if defined(GAME_OE1)
+    int tx, ty, ang = -1;
+    if (sscanf(line + 3, "%d %d %d", &tx, &ty, &ang) >= 2) {
+      cv->viewX = cv->destX = tx * 64 + 32;
+      cv->viewY = cv->destY = ty * 64 + 32;
+      if (ang >= 0)
+        cv->viewAngle = cv->destAngle = ang;
+      Canvas_finishRotation(cv);
+    }
+  } else if (!strncmp(line, "map ", 4)) {
+    int mapId = atoi(line + 4);
+    Canvas_loadMap(g_app->canvas, mapId, 1);
+  } else if (!strncmp(line, "dialog ", 7)) {
+    int style = atoi(line + 7);
+    char *text = strchr(line + 7, ' ');
+    if (text)
+      text++;
+    else
+      text = "Test dialog";
+    Canvas_showDialog(g_app->canvas, NULL, text, style, 0, 0);
+#else
     int tx, ty;
     if (sscanf(line + 3, "%d %d", &tx, &ty) == 2) {
       cv->viewX = cv->destX = tx * 64 + 32;
@@ -210,6 +250,7 @@ static int pipe_tick(int tick) {
       Canvas_finishRotation(cv, 1);
       Game_relinkEntity(g_app->player);
     }
+#endif
   } else {
     for (tok = strtok_r(line, " ", &save); tok;
          tok = strtok_r(NULL, " ", &save))
@@ -219,6 +260,14 @@ static int pipe_tick(int tick) {
 }
 
 static void usage(const char *argv0) {
+#if defined(GAME_OE1)
+  printf("usage: %s [--data DIR] [--screen WxH] [--fast]\n"
+         "  --data DIR     folder holding orcsandelves.bar and "
+         "orcsandelves.mod (default: data)\n"
+         "  --screen WxH   screen size (default 352x200)\n"
+         "  --fast         run a faster tick timer\n",
+         argv0);
+#else
   printf("usage: %s [--data DIR] [--screen WxH] [--fast]\n"
          "  --data DIR     folder holding orcsandelves2.bar and "
          "orcsandelves2.mod (default: data)\n"
@@ -226,6 +275,7 @@ static void usage(const char *argv0) {
          "  --fast         run a tick every 16 ms (about one per frame) "
          "instead of the phone's 40 ms timer\n",
          argv0);
+#endif
 }
 
 int main(int argc, char **argv) {
@@ -255,23 +305,33 @@ int main(int argc, char **argv) {
     }
   }
 
+#if defined(GAME_OE1)
+  const char *title = "Orcs & Elves";
+  const char *bar_name = "orcsandelves.bar";
+  const char *mod_name = "orcsandelves.mod";
+#else
+  const char *title = "Orcs & Elves II";
+  const char *bar_name = "orcsandelves2.bar";
+  const char *mod_name = "orcsandelves2.mod";
+#endif
+
   if (Brew_init(data, w, h) != 0) {
     char msg[512];
     snprintf(msg, sizeof(msg),
              "Game data was not found! "
-             "Please place \"orcsandelves2.bar\" and \"orcsandelves2.mod\""
+             "Please place \"%s\" and \"%s\" "
              "in the \"%s\" folder.",
-             data);
-    Plat_showError("Orcs & Elves II", msg);
+             bar_name, mod_name, data);
+    Plat_showError(title, msg);
     return 1;
   }
-  if (Plat_init(w, h, "Orcs & Elves II") != 0)
+  if (Plat_init(w, h, title) != 0)
     return 1;
   Audio_init();
 
   app = App_create(w, h);
   if (!app) {
-    Plat_showError("Orcs & Elves II",
+    Plat_showError(title,
                    "Engine startup failed.\nOut of memory or corrupted data.");
     Plat_shutdown();
     Brew_shutdown();

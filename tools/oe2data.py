@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-OE2Data - Comprehensive Data Inspection Tool for Orcs & Elves II (.bar archive)
+OEData - Comprehensive Data Inspection Tool for Orcs & Elves / Orcs & Elves II (.bar archives)
 Standard library only (Python 3.8+).
 
 Parses:
   - BREW .bar resource archives (Resource types, gzip payload decompression)
-  - strings.bin (Grouped string tables with hyphens/formatting markers)
-  - entities.bin (190 entity definitions: tileIndex, subId, eType, eSubType, parm, names)
+  - strings.bin (Grouped string tables with hyphens/formatting markers, OE2)
+  - entities.bin (Entity definitions: tileIndex, subId, eType, eSubType, parm, names/descriptions)
   - mappings.bin (Wall, Flat, Sprite mappings and Remap tables)
   - palettes.bin (RGB565 palettes converted to RGB888)
   - bitshapes.bin (Sprite dimensions, bounding boxes, stexels index)
-  - Map BSPs (m_01..m_07, dev maps: header, nodes, lines, standing & placed sprites,
+  - Map BSPs (OE1: 6000..6011; OE2: 2000..2013: header, nodes, lines, sprites,
     tile grids, events, bytecodes, ASCII visualization)
 """
 
@@ -25,37 +25,116 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-# Default BAR path relative to repo root
-DEFAULT_BAR_PATH = Path(__file__).resolve().parent.parent / "data" / "orcsandelves2.bar"
 
-# Resource IDs
-RES_ENTITIES = 1000
-RES_SINTABLE = 1001
-RES_STRINGS = 1002
-RES_PALETTES = 1003
-RES_MAPPINGS = 1004
-RES_BITSHAPES = 1005
-RES_STEXELS = 1006
-RES_WTEXELS = 1007
-RES_FTEXELS = 1008
-RES_MAP_BASE = 1999  # map N is 1999 + N
+@dataclass
+class GameConfig:
+    game_id: str  # "oe1" or "oe2"
+    title: str
+    bar_default: str
+    res_entities: int
+    res_sintable: int
+    res_palettes: int
+    res_bitshapes: int
+    res_mappings: int
+    res_map_base: int  # map N is res_map_base + N
+    res_strings: Optional[int]
+    map_names: Dict[int, str]
+    campaign_map_range: range
+    candidate_emitters: Dict[int, str]
 
-MAP_NAMES_BY_INDEX = {
-    1: "Caverns",
-    2: "Dwarkar",
-    3: "Tunnels",
-    4: "El'Landra",
-    5: "Dark Forest",
-    6: "Sol",
-    7: "Darkfel",
-    8: "Ben's Map",
-    9: "Brett",
-    10: "Items",
-    11: "Jah",
-    12: "Karina",
-    13: "Matt",
-    14: "Monster Map",
-}
+
+OE1_CONFIG = GameConfig(
+    game_id="oe1",
+    title="Orcs & Elves",
+    bar_default="orcsandelves.bar",
+    res_entities=5001,
+    res_sintable=5002,
+    res_palettes=5005,
+    res_bitshapes=5006,
+    res_mappings=5007,
+    res_map_base=5999,  # map 1 = 6000
+    res_strings=None,
+    map_names={
+        1: "Entrance Hall",
+        2: "Prison",
+        3: "Great Hall",
+        4: "Labyrinth",
+        5: "Catacombs",
+        6: "Throne Room",
+        7: "The Pit",
+        8: "Twilight Cavern",
+        9: "Dragon's Lair",
+        10: "Orcs & Elves",
+        11: "Items",
+    },
+    campaign_map_range=range(1, 10),  # 1..9 (through Dragon's Lair)
+    candidate_emitters={
+        116: "Wall Torch / Sconce",
+        130: "Fire",
+        136: "Torchiere",
+        145: "Fire Portal",
+        165: "Healing Crystal",
+        181: "Wall Sconce",
+        185: "Fire Sconce",
+        220: "Red Crystal",
+        221: "Green Crystal",
+        222: "Blue Crystal",
+        223: "Yellow Crystal",
+        224: "Magic Flame (Blue)",
+        225: "Magic Flame (Cyan)",
+        227: "Torch Glow",
+        230: "Fire Column",
+        235: "Purple Fire",
+        238: "Brazier Flame",
+        242: "Orange Glow",
+        243: "Blue Glow",
+        245: "Green Glow",
+        252: "Portal Gate Glow",
+        280: "Fire Portal Door",
+    },
+)
+
+OE2_CONFIG = GameConfig(
+    game_id="oe2",
+    title="Orcs & Elves II",
+    bar_default="orcsandelves2.bar",
+    res_entities=1000,
+    res_sintable=1001,
+    res_palettes=1003,
+    res_bitshapes=1005,
+    res_mappings=1004,
+    res_map_base=1999,  # map 1 = 2000
+    res_strings=1002,
+    map_names={
+        1: "Caverns",
+        2: "Dwarkar",
+        3: "Tunnels",
+        4: "El'Landra",
+        5: "Dark Forest",
+        6: "Sol",
+        7: "Darkfel",
+        8: "Ben's Map",
+        9: "Brett",
+        10: "Items",
+        11: "Jah",
+        12: "Karina",
+        13: "Matt",
+        14: "Monster Map",
+    },
+    campaign_map_range=range(1, 8),  # 1..7 (Sol / Darkfel)
+    candidate_emitters={
+        130: "Fire",
+        138: "Fire Portal Brazier (Sol / Darkfel)",
+        143: "Torch / Sconce (Campaign)",
+        145: "Fire Portal Brazier / Sconce",
+        150: "Wall Sconce",
+        161: "Flame Barrier (Sol / Darkfel)",
+        181: "Wall Sconce",
+    },
+)
+
+# Backward-compatibility alias
+MAP_NAMES_BY_INDEX = OE2_CONFIG.map_names
 
 
 def clean_text(text: str) -> str:
@@ -84,8 +163,8 @@ class BarEntry:
 class BarArchive:
     """Parser for Qualcomm BREW 7.x resource archive (.bar)."""
 
-    def __init__(self, path: Optional[Path | str] = None):
-        self.path = Path(path) if path else DEFAULT_BAR_PATH
+    def __init__(self, path: Path | str):
+        self.path = Path(path)
         if not self.path.exists():
             raise FileNotFoundError(f"Archive not found: {self.path}")
 
@@ -157,6 +236,19 @@ class BarArchive:
                     self.name_to_id[name.lower()] = res_id
                     self.name_to_id[Path(name).stem.lower()] = res_id
 
+    def detect_game(self) -> GameConfig:
+        """Infer target game config from resource IDs and file path."""
+        if OE1_CONFIG.res_entities in self.entries or OE1_CONFIG.res_palettes in self.entries:
+            return OE1_CONFIG
+        if OE2_CONFIG.res_entities in self.entries or OE2_CONFIG.res_palettes in self.entries:
+            return OE2_CONFIG
+        p_str = str(self.path).lower()
+        if "orcsandelves2" in p_str:
+            return OE2_CONFIG
+        if "orcsandelves" in p_str:
+            return OE1_CONFIG
+        return OE2_CONFIG
+
     def get_raw(self, res_id_or_name: int | str) -> Optional[bytes]:
         res_id = self._resolve_id(res_id_or_name)
         if res_id is None or res_id not in self.entries:
@@ -189,7 +281,7 @@ class BarArchive:
 # Strings Table
 # -----------------------------------------------------------------------------
 class StringTable:
-    """Parser for strings.bin (RES_STRINGS = 1002)."""
+    """Parser for strings.bin (OE2: res 1002)."""
 
     def __init__(self, data: bytes):
         self.groups: List[List[str]] = []
@@ -242,43 +334,113 @@ class EntityDef:
 
 
 class EntityTable:
-    """Parser for entities.bin (RES_ENTITIES = 1000)."""
+    """Parser for entities.bin (OE1: res 5001, OE2: res 1000)."""
 
-    def __init__(self, data: bytes, strings: Optional[StringTable] = None):
+    def __init__(
+        self,
+        data: bytes,
+        strings: Optional[StringTable] = None,
+        game_id: str = "oe2",
+    ):
         self.defs: List[EntityDef] = []
+        if len(data) < 2:
+            return
         num_defs = struct.unpack_from("<H", data, 0)[0]
-        for i in range(num_defs):
-            off = 2 + i * 13
-            (
-                tile,
-                sub_id,
-                etype,
-                esubtype,
-                parm,
-                name_id,
-                lname_id,
-                desc_id,
-            ) = struct.unpack_from("<hBBBhHHH", data, off)
 
-            name = strings.get(1, name_id, clean=False) if strings else ""
-            lname = strings.get(1, lname_id, clean=False) if strings else ""
-            desc = strings.get(1, desc_id, clean=False) if strings else ""
+        is_fixed = (2 + num_defs * 13 == len(data)) and game_id != "oe1"
+        if is_fixed:
+            # OE2: Fixed 13-byte records referencing strings.bin
+            for i in range(num_defs):
+                off = 2 + i * 13
+                (
+                    tile,
+                    sub_id,
+                    etype,
+                    esubtype,
+                    parm,
+                    name_id,
+                    lname_id,
+                    desc_id,
+                ) = struct.unpack_from("<hBBBhHHH", data, off)
 
-            ed = EntityDef(
-                index=i,
-                tile_index=tile,
-                sub_id=sub_id,
-                etype=etype,
-                esubtype=esubtype,
-                parm=parm,
-                name_id=name_id,
-                long_name_id=lname_id,
-                desc_id=desc_id,
-                name=name,
-                long_name=lname,
-                description=desc,
-            )
-            self.defs.append(ed)
+                name = strings.get(1, name_id, clean=False) if strings else ""
+                lname = strings.get(1, lname_id, clean=False) if strings else ""
+                desc = strings.get(1, desc_id, clean=False) if strings else ""
+
+                ed = EntityDef(
+                    index=i,
+                    tile_index=tile,
+                    sub_id=sub_id,
+                    etype=etype,
+                    esubtype=esubtype,
+                    parm=parm,
+                    name_id=name_id,
+                    long_name_id=lname_id,
+                    desc_id=desc_id,
+                    name=name,
+                    long_name=lname,
+                    description=desc,
+                )
+                self.defs.append(ed)
+        else:
+            # OE1: Variable-length records with embedded names and descriptions
+            pos = 2
+            for i in range(num_defs):
+                if pos + 4 > len(data):
+                    break
+                tile = struct.unpack_from("<h", data, pos)[0]
+                icon = data[pos + 2]
+                nlen = data[pos + 3]
+                pos += 4
+                name = (
+                    data[pos : pos + nlen].decode("latin1", "replace")
+                    if nlen > 0
+                    else ""
+                )
+                pos += nlen
+
+                lnlen = data[pos] if pos < len(data) else 0
+                pos += 1
+                lname = (
+                    data[pos : pos + lnlen].decode("latin1", "replace")
+                    if lnlen > 0
+                    else name
+                )
+                pos += lnlen
+
+                dend = data.find(b"\x00", pos)
+                if dend != -1:
+                    desc = data[pos:dend].decode("latin1", "replace")
+                    pos = dend + 1
+                else:
+                    desc = ""
+                    pos = len(data)
+
+                etype = data[pos] if pos < len(data) else 0
+                esubtype = data[pos + 1] if pos + 1 < len(data) else 0
+                pos += 2
+                parm = (
+                    struct.unpack_from("<i", data, pos)[0]
+                    if pos + 4 <= len(data)
+                    else 0
+                )
+                pos += 4
+
+                ed = EntityDef(
+                    index=i,
+                    tile_index=tile,
+                    sub_id=icon,
+                    etype=etype,
+                    esubtype=esubtype,
+                    parm=parm,
+                    name_id=0,
+                    long_name_id=0,
+                    desc_id=0,
+                    name=name,
+                    long_name=lname,
+                    description=desc,
+                )
+                self.defs.append(ed)
 
     def find_weapon(self, weapon_id: int) -> Optional[EntityDef]:
         for d in self.defs:
@@ -328,7 +490,7 @@ class ShapeMap:
 
 
 class Mappings:
-    """Parser for mappings.bin (RES_MAPPINGS = 1004)."""
+    """Parser for mappings.bin (OE1: res 5007, OE2: res 1004)."""
 
     def __init__(self, data: bytes):
         (
@@ -341,28 +503,24 @@ class Mappings:
         ) = struct.unpack_from("<6I", data, 0)
         pos = 24
 
-        # Wall maps {texelOfs: u32, palette: u32}
         self.wall_maps: List[ShapeMap] = []
         for _ in range(self.n_walls):
             ofs, pal = struct.unpack_from("<II", data, pos)
             pos += 8
             self.wall_maps.append(ShapeMap(ofs=ofs, palette=pal >> 8))
 
-        # Flat maps {ofs: u32, palette: u32}
         self.flat_maps: List[ShapeMap] = []
         for _ in range(self.n_flats):
             ofs, pal = struct.unpack_from("<II", data, pos)
             pos += 8
             self.flat_maps.append(ShapeMap(ofs=ofs, palette=pal >> 8))
 
-        # Sprite maps {ofs: u32, palette: u32}
         self.sprite_maps: List[ShapeMap] = []
         for _ in range(self.n_sprites):
             ofs, pal = struct.unpack_from("<II", data, pos)
             pos += 8
             self.sprite_maps.append(ShapeMap(ofs=ofs, palette=pal >> 8))
 
-        # Remap tables (s16 arrays)
         self.wall_remap = list(
             struct.unpack_from(f"<{self.n_wremap}h", data, pos)
         )
@@ -378,7 +536,7 @@ class Mappings:
 
 
 class Palettes:
-    """Parser for palettes.bin (RES_PALETTES = 1003)."""
+    """Parser for palettes.bin (OE1: res 5005, OE2: res 1003)."""
 
     def __init__(self, data: bytes):
         self.num_palettes = struct.unpack_from("<H", data, 0)[0]
@@ -399,7 +557,7 @@ class Palettes:
 
 
 class Bitshapes:
-    """Parser for bitshapes.bin (RES_BITSHAPES = 1005)."""
+    """Parser for bitshapes.bin (OE1: res 5006, OE2: res 1005)."""
 
     def __init__(self, data: bytes):
         self.size = struct.unpack_from("<I", data, 0)[0]
@@ -448,6 +606,17 @@ class Bitshapes:
 # Map BSP
 # -----------------------------------------------------------------------------
 @dataclass
+class MapLine:
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+    texture: int
+    texture2: int
+    flags: int
+
+
+@dataclass
 class MapSprite:
     x: int
     y: int
@@ -457,17 +626,6 @@ class MapSprite:
     is_placed: bool
     is_wall_attached: bool = False
     wall_dir: Optional[str] = None
-
-
-@dataclass
-class MapLine:
-    x1: int
-    y1: int
-    x2: int
-    y2: int
-    texture: int
-    texture2: int
-    flags: int
 
 
 @dataclass
@@ -513,8 +671,7 @@ class MapData:
             ty = sp.y // 8
             if 0 <= tx < 32 and 0 <= ty < 32:
                 if grid[ty][tx] not in ("#", "P"):
-                    # Use S for sprites, T for torches/fire, M for monsters
-                    if sp.tile in (130, 138, 143, 145, 150, 161, 181):
+                    if sp.tile in (116, 130, 136, 138, 143, 145, 150, 161, 165, 181, 185):
                         grid[ty][tx] = "*"  # Fire/Light emitter
                     elif 0x11 <= sp.tile <= 0x40:
                         grid[ty][tx] = "M"  # Monster
@@ -537,28 +694,41 @@ class MapData:
         return "\n".join(lines)
 
 
-def parse_map(data: bytes, map_id: int, strings: Optional[StringTable] = None) -> Optional[MapData]:
+def parse_map(
+    data: bytes,
+    map_id: int,
+    strings: Optional[StringTable] = None,
+    config: Optional[GameConfig] = None,
+) -> Optional[MapData]:
     if len(data) < 25:
         return None
     pos = 0
     ver = data[pos]
     pos += 1
-    if ver != 10:
+    if ver not in (7, 10):
         return None
+
+    is_oe1 = (ver == 7)
     mhash = struct.unpack_from("<I", data, pos)[0]
     pos += 4
-    name_id = struct.unpack_from("<h", data, pos)[0]
-    pos += 2
 
-    # Map name
-    map_str_grp = map_id + 3
-    map_name = (
-        strings.get(map_str_grp, name_id, clean=True)
-        if strings
-        else MAP_NAMES_BY_INDEX.get(map_id, f"Map_{map_id}")
-    )
-    if not map_name:
-        map_name = MAP_NAMES_BY_INDEX.get(map_id, f"Map_{map_id}")
+    if is_oe1:
+        map_name_raw = data[pos : pos + 16]
+        pos += 16
+        map_name = map_name_raw.split(b"\x00")[0].decode("latin1", "replace").strip()
+        if not map_name and config:
+            map_name = config.map_names.get(map_id, f"Map_{map_id}")
+    else:
+        name_id = struct.unpack_from("<h", data, pos)[0]
+        pos += 2
+        map_str_grp = map_id + 3
+        map_name = (
+            strings.get(map_str_grp, name_id, clean=True)
+            if strings
+            else (config.map_names.get(map_id, f"Map_{map_id}") if config else f"Map_{map_id}")
+        )
+        if not map_name and config:
+            map_name = config.map_names.get(map_id, f"Map_{map_id}")
 
     # Colors
     floor_c = (data[pos + 2], data[pos + 1], data[pos])
@@ -568,39 +738,61 @@ def parse_map(data: bytes, map_id: int, strings: Optional[StringTable] = None) -
     color3 = (data[pos + 2], data[pos + 1], data[pos])
     pos += 3
 
-    hdr17628 = data[pos]
-    pos += 1
-    player_tile = struct.unpack_from("<H", data, pos)[0]
-    pos += 2
-    spawn_dir = data[pos]
-    pos += 1
-    spawn_tile = struct.unpack_from("<H", data, pos)[0]
-    pos += 2
-    floor_h = data[pos]
-    pos += 1
-    ceil_h = data[pos]
-    pos += 1
-    flags = data[pos]
-    pos += 1
+    if is_oe1:
+        f1e024 = data[pos]
+        pos += 1
+        spawn_tile = struct.unpack_from("<H", data, pos)[0]
+        pos += 2
+        spawn_dir = data[pos]
+        pos += 1
+        player_tile = struct.unpack_from("<H", data, pos)[0]
+        pos += 2
+        floor_h = data[pos]
+        pos += 1
+        ceil_h = data[pos]
+        pos += 1
+        flags = data[pos]
+        pos += 1
+    else:
+        hdr17628 = data[pos]
+        pos += 1
+        player_tile = struct.unpack_from("<H", data, pos)[0]
+        pos += 2
+        spawn_dir = data[pos]
+        pos += 1
+        spawn_tile = struct.unpack_from("<H", data, pos)[0]
+        pos += 2
+        floor_h = data[pos]
+        pos += 1
+        ceil_h = data[pos]
+        pos += 1
+        flags = data[pos]
+        pos += 1
 
-    # Nodes
+    # Nodes (10 bytes each)
     num_nodes = struct.unpack_from("<h", data, pos)[0]
     pos += 2
     pos += num_nodes * 10
 
-    # Lines
+    # Lines (OE1: 9 bytes, OE2: 10 bytes)
     num_lines = struct.unpack_from("<h", data, pos)[0]
     pos += 2
     lines = []
+    line_stride = 9 if is_oe1 else 10
     for _ in range(num_lines):
         x1 = data[pos] << 3
         y1 = data[pos + 1] << 3
         x2 = data[pos + 2] << 3
         y2 = data[pos + 3] << 3
-        tex1 = data[pos + 4]
-        tex2 = data[pos + 5]
-        lflags = struct.unpack_from("<I", data, pos + 6)[0]
-        pos += 10
+        if is_oe1:
+            tex1 = data[pos + 4]
+            tex2 = 0
+            lflags = struct.unpack_from("<I", data, pos + 5)[0]
+        else:
+            tex1 = data[pos + 4]
+            tex2 = data[pos + 5]
+            lflags = struct.unpack_from("<I", data, pos + 6)[0]
+        pos += line_stride
         lines.append(
             MapLine(
                 x1=x1,
@@ -641,7 +833,7 @@ def parse_map(data: bytes, map_id: int, strings: Optional[StringTable] = None) -
     for _ in range(num_placed):
         sx = data[pos] << 3
         sy = data[pos + 1] << 3
-        sz = data[pos + 2] - 0x20
+        sz = data[pos + 2] if is_oe1 else (data[pos + 2] - 0x20)
         b0 = data[pos + 3]
         b1 = data[pos + 4]
         hi = struct.unpack_from("<h", data, pos + 5)[0]
@@ -649,10 +841,9 @@ def parse_map(data: bytes, map_id: int, strings: Optional[StringTable] = None) -
         info = b0 | (b1 << 8) | (hi << 16)
 
         tile = info & 0xFF
-        if info & 0x40000:
+        if not is_oe1 and (info & 0x40000):
             tile += 0x101
 
-        # Check wall-attached nudge
         is_wall = bool(info & 0x800000)
         wall_dir = None
         if is_wall:
@@ -682,22 +873,43 @@ def parse_map(data: bytes, map_id: int, strings: Optional[StringTable] = None) -
     num_tile_events = struct.unpack_from("<h", data, pos)[0]
     pos += 2
     if num_tile_events > 0:
-        pos += num_tile_events * 2 + num_tile_events * 4
+        if is_oe1:
+            pos += num_tile_events * 4
+        else:
+            pos += num_tile_events * 2 + num_tile_events * 4
 
-    # Bytecodes
+    # Bytecodes / commands
     num_bytecodes = struct.unpack_from("<h", data, pos)[0]
     pos += 2
     if num_bytecodes > 0:
         pos += num_bytecodes * 9
 
-    # Tile flags (512 bytes = 1024 nibbles)
+    # OE1 map strings
+    if is_oe1:
+        num_map_strings = struct.unpack_from("<h", data, pos)[0]
+        pos += 2
+        for _ in range(num_map_strings):
+            slen = struct.unpack_from("<h", data, pos)[0]
+            pos += 2 + slen
+
+    # Tile flags
     tile_flags = []
-    if pos + 512 <= len(data):
-        for _ in range(512):
-            b = data[pos]
-            pos += 1
-            tile_flags.append(b & 0x0F)
-            tile_flags.append((b >> 4) & 0x0F)
+    if is_oe1:
+        if pos + 256 <= len(data):
+            for _ in range(256):
+                b = data[pos]
+                pos += 1
+                tile_flags.append(b & 3)
+                tile_flags.append((b >> 2) & 3)
+                tile_flags.append((b >> 4) & 3)
+                tile_flags.append(b >> 6)
+    else:
+        if pos + 512 <= len(data):
+            for _ in range(512):
+                b = data[pos]
+                pos += 1
+                tile_flags.append(b & 0x0F)
+                tile_flags.append((b >> 4) & 0x0F)
 
     # Floor and ceil flats (1024 bytes each)
     floor_flats = []
@@ -737,13 +949,41 @@ def parse_map(data: bytes, map_id: int, strings: Optional[StringTable] = None) -
 
 
 # -----------------------------------------------------------------------------
-# High-Level OE2 Context / Session
+# High-Level Context / Session
 # -----------------------------------------------------------------------------
-class OE2Context:
-    """Unified context holding parsed game assets."""
+class OEContext:
+    """Unified context holding parsed game assets for Orcs & Elves I / II."""
 
-    def __init__(self, bar_path: Optional[Path | str] = None):
+    def __init__(
+        self,
+        bar_path: Optional[Path | str] = None,
+        game: Optional[str] = None,
+    ):
+        data_dir = Path(__file__).resolve().parent.parent / "data"
+
+        if bar_path is None:
+            if game == "oe1":
+                bar_path = data_dir / OE1_CONFIG.bar_default
+            elif game == "oe2":
+                bar_path = data_dir / OE2_CONFIG.bar_default
+            else:
+                oe2_bar = data_dir / OE2_CONFIG.bar_default
+                oe1_bar = data_dir / OE1_CONFIG.bar_default
+                if oe2_bar.exists() and not oe1_bar.exists():
+                    bar_path = oe2_bar
+                elif oe1_bar.exists() and not oe2_bar.exists():
+                    bar_path = oe1_bar
+                else:
+                    bar_path = oe2_bar if oe2_bar.exists() else oe1_bar
+
         self.bar = BarArchive(bar_path)
+        if game == "oe1":
+            self.config = OE1_CONFIG
+        elif game == "oe2":
+            self.config = OE2_CONFIG
+        else:
+            self.config = self.bar.detect_game()
+
         self._strings: Optional[StringTable] = None
         self._entities: Optional[EntityTable] = None
         self._mappings: Optional[Mappings] = None
@@ -752,67 +992,81 @@ class OE2Context:
         self._maps: Dict[int, MapData] = {}
 
     @property
-    def strings(self) -> StringTable:
-        if self._strings is None:
-            raw = self.bar.get(RES_STRINGS)
-            if not raw:
-                raise RuntimeError("Failed to load strings.bin")
-            self._strings = StringTable(raw)
+    def strings(self) -> Optional[StringTable]:
+        if self._strings is None and self.config.res_strings is not None:
+            raw = self.bar.get(self.config.res_strings)
+            if raw:
+                self._strings = StringTable(raw)
         return self._strings
 
     @property
     def entities(self) -> EntityTable:
         if self._entities is None:
-            raw = self.bar.get(RES_ENTITIES)
+            raw = self.bar.get(self.config.res_entities)
             if not raw:
-                raise RuntimeError("Failed to load entities.bin")
-            self._entities = EntityTable(raw, self.strings)
+                raise RuntimeError(
+                    f"Failed to load entities.bin (res {self.config.res_entities})"
+                )
+            self._entities = EntityTable(
+                raw, self.strings, game_id=self.config.game_id
+            )
         return self._entities
 
     @property
     def mappings(self) -> Mappings:
         if self._mappings is None:
-            raw = self.bar.get(RES_MAPPINGS)
+            raw = self.bar.get(self.config.res_mappings)
             if not raw:
-                raise RuntimeError("Failed to load mappings.bin")
+                raise RuntimeError(
+                    f"Failed to load mappings.bin (res {self.config.res_mappings})"
+                )
             self._mappings = Mappings(raw)
         return self._mappings
 
     @property
     def palettes(self) -> Palettes:
         if self._palettes is None:
-            raw = self.bar.get(RES_PALETTES)
+            raw = self.bar.get(self.config.res_palettes)
             if not raw:
-                raise RuntimeError("Failed to load palettes.bin")
+                raise RuntimeError(
+                    f"Failed to load palettes.bin (res {self.config.res_palettes})"
+                )
             self._palettes = Palettes(raw)
         return self._palettes
 
     @property
     def bitshapes(self) -> Bitshapes:
         if self._bitshapes is None:
-            raw = self.bar.get(RES_BITSHAPES)
+            raw = self.bar.get(self.config.res_bitshapes)
             if not raw:
-                raise RuntimeError("Failed to load bitshapes.bin")
+                raise RuntimeError(
+                    f"Failed to load bitshapes.bin (res {self.config.res_bitshapes})"
+                )
             self._bitshapes = Bitshapes(raw)
         return self._bitshapes
 
     def get_map(self, map_id: int) -> Optional[MapData]:
         if map_id in self._maps:
             return self._maps[map_id]
-        res_id = RES_MAP_BASE + map_id
+        res_id = self.config.res_map_base + map_id
         raw = self.bar.get(res_id)
         if not raw:
             return None
-        md = parse_map(raw, map_id, self.strings)
+        md = parse_map(raw, map_id, self.strings, self.config)
         if md:
             self._maps[map_id] = md
         return md
 
 
+# Backward compatibility
+OE2Context = OEContext
+
+
 # -----------------------------------------------------------------------------
 # CLI Interface
 # -----------------------------------------------------------------------------
-def cmd_list(ctx: OE2Context, args: argparse.Namespace) -> None:
+def cmd_list(ctx: OEContext, args: argparse.Namespace) -> None:
+    print(f"Game: {ctx.config.title} ({ctx.config.game_id})")
     print(f"Archive: {ctx.bar.path} ({len(ctx.bar.raw_data)} bytes)")
     print(f"{'ID':>5}  {'Type':>4}  {'Size':>8}  {'Comp':>4}  {'Name'}")
     print("-" * 55)
@@ -824,7 +1078,7 @@ def cmd_list(ctx: OE2Context, args: argparse.Namespace) -> None:
         )
 
 
-def cmd_extract(ctx: OE2Context, args: argparse.Namespace) -> None:
+def cmd_extract(ctx: OEContext, args: argparse.Namespace) -> None:
     raw = ctx.bar.get(args.resource)
     if raw is None:
         print(f"Error: resource '{args.resource}' not found in archive.")
@@ -834,8 +1088,35 @@ def cmd_extract(ctx: OE2Context, args: argparse.Namespace) -> None:
     print(f"Extracted {len(raw)} bytes to {out_path}")
 
 
-def cmd_strings(ctx: OE2Context, args: argparse.Namespace) -> None:
+def cmd_strings(ctx: OEContext, args: argparse.Namespace) -> None:
     st = ctx.strings
+    if st is None:
+        print(f"[{ctx.config.title}] strings.bin is not present in this archive.")
+        print(
+            "Entity names and descriptions are embedded directly in entities.bin (use 'entities' command)."
+        )
+        mod_file = "orcsandelves.mod" if ctx.config.game_id == "oe1" else "orcsandelves2.mod"
+        mod_path = Path(__file__).resolve().parent.parent / "data" / mod_file
+        if args.search and mod_path.exists():
+            data = mod_path.read_bytes()
+            query = args.search.lower()
+            results = []
+            start = None
+            for i, b in enumerate(data):
+                if 32 <= b <= 126:
+                    if start is None:
+                        start = i
+                else:
+                    if b == 0 and start is not None and i - start >= 3:
+                        s = data[start:i].decode("ascii", "replace")
+                        if query in s.lower():
+                            results.append((start, s))
+                    start = None
+            print(f"\nSearch results from {mod_file} ({len(results)} matches):")
+            for off, s in results:
+                print(f"  [Offset 0x{off:05x}]: {clean_text(s)}")
+        return
+
     if args.search:
         results = st.search(args.search)
         print(f"Found {len(results)} matches for '{args.search}':")
@@ -848,37 +1129,51 @@ def cmd_strings(ctx: OE2Context, args: argparse.Namespace) -> None:
         if not (0 <= g < len(st.groups)):
             print(f"Invalid group {g} (valid: 0..{len(st.groups)-1})")
             return
-        print(f"=== String Group {g} ({len(st.groups[g])} strings) ===")
+        print(f"=== Group {g} ({len(st.groups[g])} strings) ===")
         for idx, text in enumerate(st.groups[g]):
             if text:
                 print(f"  [{idx:3d}]: {clean_text(text)}")
-    else:
-        print(f"String Groups (Total: {len(st.groups)}):")
-        for g, grp in enumerate(st.groups):
-            first = clean_text(grp[0]) if grp and grp[0] else "(empty)"
-            if len(first) > 40:
-                first = first[:37] + "..."
-            print(f"  Group {g:2d}: {len(grp):3d} strings, sample: '{first}'")
+        return
+
+    print(f"=== {ctx.config.title} Strings Summary ({len(st.groups)} groups) ===")
+    for idx, grp in enumerate(st.groups):
+        first = clean_text(grp[0]) if grp and grp[0] else "(empty)"
+        if len(first) > 40:
+            first = first[:37] + "..."
+        print(f"  Group {idx:2d}: {len(grp):3d} strings | Sample: {first}")
 
 
-def cmd_entities(ctx: OE2Context, args: argparse.Namespace) -> None:
-    et = ctx.entities
-    defs = et.filter(tile=args.tile, etype=args.type, query=args.search)
-    print(f"Found {len(defs)} entities matching criteria:")
-    print(f"{'Idx':>3} {'Tile':>4} {'Type':>7} {'Parm':>4} {'Name':<20} {'Long Name'}")
-    print("-" * 65)
-    for d in defs:
-        t_str = f"{d.etype}:{d.esubtype}"
-        name = clean_text(d.name)
-        lname = clean_text(d.long_name)
-        print(f"{d.index:3d} {d.tile_index:4d} {t_str:>7} {d.parm:4d} {name:<20} {lname}")
+def cmd_entities(ctx: OEContext, args: argparse.Namespace) -> None:
+    ed_list = ctx.entities.filter(
+        tile=args.tile, etype=args.type, query=args.search
+    )
+    print(
+        f"=== {ctx.config.title} Entities ({len(ed_list)} of {len(ctx.entities.defs)}) ==="
+    )
+    print(
+        f"{'Idx':>4} {'Tile':>4} {'Type':>5} {'Parm':>5} {'Name':<18} {'Long Name':<20} {'Description'}"
+    )
+    print("-" * 80)
+    for ed in ed_list:
+        name = clean_text(ed.name)
+        lname = clean_text(ed.long_name)
+        desc = clean_text(ed.description)
+        if len(desc) > 30:
+            desc = desc[:27] + "..."
+        t_str = f"{ed.etype}:{ed.esubtype}"
+        print(
+            f"{ed.index:4d} {ed.tile_index:4d} {t_str:>5} {ed.parm:5d} {name:<18} {lname:<20} {desc}"
+        )
 
 
-def cmd_weapons(ctx: OE2Context, args: argparse.Namespace) -> None:
-    print("=== Player Weapons in Orcs & Elves II ===")
-    print(f"{'Wpn#':>4} {'SubId':>5} {'Tile':>4} {'Name':<16} {'Long Name':<20} {'Description'}")
+def cmd_weapons(ctx: OEContext, args: argparse.Namespace) -> None:
+    print(f"=== {ctx.config.title} Weapons & Equipment ===")
+    print(
+        f"{'WID':>4} {'SubID':>5} {'Tile':>4} {'Name':<16} {'Long Name':<20} {'Description'}"
+    )
     print("-" * 75)
-    for w in range(11):
+    max_weapons = 8 if ctx.config.game_id == "oe1" else 11
+    for w in range(max_weapons):
         ed = ctx.entities.find_weapon(w)
         if ed:
             name = clean_text(ed.name)
@@ -893,20 +1188,33 @@ def cmd_weapons(ctx: OE2Context, args: argparse.Namespace) -> None:
             print(f"{w:4d}   (not defined in entities.bin)")
 
 
-def cmd_map(ctx: OE2Context, args: argparse.Namespace) -> None:
+def cmd_map(ctx: OEContext, args: argparse.Namespace) -> None:
     map_id = None
-    if str(args.map).isdigit():
-        map_id = int(args.map)
+    map_arg = str(args.map).strip()
+
+    if map_arg.isdigit():
+        num = int(map_arg)
+        # Check if direct resource ID
+        if ctx.config.game_id == "oe1" and 6000 <= num <= 6011:
+            map_id = num - 5999
+        elif ctx.config.game_id == "oe2" and 2000 <= num <= 2014:
+            map_id = num - 1999
+        else:
+            map_id = num
     else:
         # Match by name
-        m_name = str(args.map).lower()
-        for mid, name in MAP_NAMES_BY_INDEX.items():
+        m_name = map_arg.lower()
+        for mid, name in ctx.config.map_names.items():
             if m_name in name.lower():
                 map_id = mid
                 break
 
     if map_id is None:
-        print(f"Could not identify map '{args.map}'")
+        print(f"Could not identify map '{args.map}' for {ctx.config.title}")
+        print("Available maps:")
+        for mid, name in sorted(ctx.config.map_names.items()):
+            res_id = ctx.config.res_map_base + mid
+            print(f"  {mid:2d} (Res {res_id}): {name}")
         return
 
     md = ctx.get_map(map_id)
@@ -914,7 +1222,8 @@ def cmd_map(ctx: OE2Context, args: argparse.Namespace) -> None:
         print(f"Map {map_id} could not be parsed.")
         return
 
-    print(f"=== Map {md.map_id}: {md.name} ===")
+    res_id = ctx.config.res_map_base + md.map_id
+    print(f"=== Map {md.map_id} (Res {res_id}): {md.name} [{ctx.config.title}] ===")
     print(f"  Version: {md.version}, Hash: 0x{md.hash:08X}")
     print(
         f"  Floor Color (RGB): {md.floor_color}, Ceil Color (RGB): {md.ceil_color}"
@@ -940,7 +1249,6 @@ def cmd_map(ctx: OE2Context, args: argparse.Namespace) -> None:
         for sp in md.placed_sprites:
             gx, gy = sp.x // 8, sp.y // 8
             w_str = f"Yes ({sp.wall_dir})" if sp.is_wall_attached else "No"
-            # find entity name if any
             ed_list = ctx.entities.filter(tile=sp.tile)
             name = clean_text(ed_list[0].name) if ed_list else ""
             print(
@@ -948,24 +1256,18 @@ def cmd_map(ctx: OE2Context, args: argparse.Namespace) -> None:
             )
 
 
-def cmd_emitters(ctx: OE2Context, args: argparse.Namespace) -> None:
-    """Analyze light emitter candidate tiles and occurrences across all campaign maps."""
-    print("=== Light Emitter Analysis across Campaign Maps (1..7) ===")
+def cmd_emitters(ctx: OEContext, args: argparse.Namespace) -> None:
+    """Analyze light emitter candidate tiles and occurrences across campaign maps."""
+    map_range = ctx.config.campaign_map_range
+    start_m, end_m = map_range.start, map_range.stop - 1
+    print(
+        f"=== Light Emitter Analysis across {ctx.config.title} Campaign Maps ({start_m}..{end_m}) ==="
+    )
 
-    # Known candidates based on entity names and tile IDs
-    candidate_tiles = {
-        130: "Fire",
-        138: "Fire Portal Brazier (Sol / Darkfel)",
-        143: "Torch / Sconce (Campaign)",
-        145: "Fire Portal Brazier / Sconce",
-        150: "Wall Sconce",
-        161: "Flame Barrier (Sol / Darkfel)",
-        181: "Wall Sconce",
-    }
-
+    candidate_tiles = ctx.config.candidate_emitters
     tile_counts: Dict[int, Dict[int, int]] = {t: {} for t in candidate_tiles}
 
-    for mid in range(1, 8):
+    for mid in map_range:
         md = ctx.get_map(mid)
         if not md:
             continue
@@ -981,13 +1283,13 @@ def cmd_emitters(ctx: OE2Context, args: argparse.Namespace) -> None:
         if counts:
             map_str = ", ".join(f"M{m}:{c}" for m, c in sorted(counts.items()))
         else:
-            map_str = "(none placed directly in M1-M7)"
+            map_str = f"(none placed directly in M{start_m}-M{end_m})"
         print(f"{tile:4d}  {desc:<32}  {map_str}")
 
 
-def cmd_tile(ctx: OE2Context, args: argparse.Namespace) -> None:
+def cmd_tile(ctx: OEContext, args: argparse.Namespace) -> None:
     tile = args.tile
-    print(f"=== Tile {tile} Report ===")
+    print(f"=== Tile {tile} Report [{ctx.config.title}] ===")
 
     # 1. Entity definitions using this tile
     ed_list = ctx.entities.filter(tile=tile)
@@ -1033,9 +1335,11 @@ def cmd_tile(ctx: OE2Context, args: argparse.Namespace) -> None:
             print(ctx.bitshapes.render_silhouette(sm0.ofs))
 
     # 3. Placement in campaign maps
-    print("\nOccurrences in Campaign Maps (1..7):")
+    map_range = ctx.config.campaign_map_range
+    start_m, end_m = map_range.start, map_range.stop - 1
+    print(f"\nOccurrences in Campaign Maps ({start_m}..{end_m}):")
     total_found = 0
-    for mid in range(1, 8):
+    for mid in map_range:
         md = ctx.get_map(mid)
         if not md:
             continue
@@ -1051,19 +1355,25 @@ def cmd_tile(ctx: OE2Context, args: argparse.Namespace) -> None:
                 coords += f" ... (+{len(matches)-6} more)"
             print(f"  Map {mid} ({md.name}): {len(matches)} placed at {coords}")
     if total_found == 0:
-        print("  (not placed in maps 1..7)")
+        print(f"  (not placed in maps {start_m}..{end_m})")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="OE2Data: Data Inspection Tool for Orcs & Elves II",
+        description="OEData: Data Inspection Tool for Orcs & Elves / Orcs & Elves II",
         formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--game",
+        choices=["oe1", "oe2"],
+        default=None,
+        help="Target game edition (oe1 or oe2; auto-detected if omitted)",
     )
     parser.add_argument(
         "--bar",
         type=str,
         default=None,
-        help="Path to orcsandelves2.bar (default: data/orcsandelves2.bar)",
+        help="Path to .bar archive (default: data/orcsandelves[2].bar)",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Subcommand to run")
@@ -1077,10 +1387,10 @@ def main() -> None:
     p_ext.add_argument("-o", "--output", help="Output file path")
 
     # strings
-    p_str = subparsers.add_parser("strings", help="Inspect strings.bin")
-    p_str.add_argument("group", nargs="?", type=int, help="String group (0..20)")
+    p_str = subparsers.add_parser("strings", help="Inspect strings (strings.bin or .mod)")
+    p_str.add_argument("group", nargs="?", type=int, help="String group (OE2: 0..20)")
     p_str.add_argument(
-        "-s", "--search", type=str, help="Search string across all groups"
+        "-s", "--search", type=str, help="Search string across all groups / mod data"
     )
 
     # entities
@@ -1092,11 +1402,11 @@ def main() -> None:
     )
 
     # weapons
-    subparsers.add_parser("weapons", help="List all player weapons and stats")
+    subparsers.add_parser("weapons", help="List player weapons and stats")
 
     # map
     p_map = subparsers.add_parser("map", help="Inspect map BSP")
-    p_map.add_argument("map", help="Map number (1..14) or name (e.g. Sol)")
+    p_map.add_argument("map", help="Map number (e.g. 1..11/14), resource ID (e.g. 6000, 2000), or name")
     p_map.add_argument(
         "--ascii", action="store_true", help="Print 32x32 ASCII visualization"
     )
@@ -1106,14 +1416,14 @@ def main() -> None:
 
     # emitters
     subparsers.add_parser(
-        "emitters", help="Analyze light emitter sources across maps"
+        "emitters", help="Analyze light emitter sources across campaign maps"
     )
 
     # tile
     p_tile = subparsers.add_parser(
         "tile", help="Inspect a specific sprite/tile ID"
     )
-    p_tile.add_argument("tile", type=int, help="Tile ID (e.g. 138, 143, 161)")
+    p_tile.add_argument("tile", type=int, help="Tile ID (e.g. 130, 136, 145, 165)")
     p_tile.add_argument(
         "--ascii", action="store_true", help="Render silhouette of frame 0"
     )
@@ -1125,9 +1435,9 @@ def main() -> None:
         sys.exit(0)
 
     try:
-        ctx = OE2Context(args.bar)
+        ctx = OEContext(bar_path=args.bar, game=args.game)
     except Exception as e:
-        print(f"Error initializing OE2Context: {e}")
+        print(f"Error initializing OEContext: {e}")
         sys.exit(1)
 
     cmds = {

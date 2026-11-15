@@ -12,7 +12,7 @@
 #include <time.h>
 
 static int remasteredMode = 1;
-static const int rangeSteps = 5; /* Low lighting range */
+static const int rangeSteps = 20; /* Max lighting reach (20 tiles / 1280 units) */
 static int hostConfigLoaded = 0;
 static int fastTickMode = 1; /* 1 = Fast (16 ms), 0 = Slow (40 ms) */
 static uint32_t worldPixels[640 * 640];
@@ -154,6 +154,7 @@ void OE2_captureWorld(const int16_t *rect) {
   }
 #endif
   apply_world_lighting(x, y, w, h);
+#if !defined(GAME_OE1)
   if (g_app && g_app->canvas && g_app->canvas->state == 0x13) {
     /* Draw the native padlock indicator over the lit 3D view. */
     Canvas *cv = g_app->canvas;
@@ -161,11 +162,17 @@ void OE2_captureWorld(const int16_t *rect) {
                         cv->screenCenterX - 0x2c, cv->renderRect[1] + 0x14, 0,
                         0, 0x100, 0);
   }
+#endif
 }
 
 void OE2_captureRenderedWorld(Render *r) {
   if (!r || !g_app || !g_app->game || !g_app->canvas)
     return;
+#if defined(GAME_OE1)
+  int16_t rect[4] = {(int16_t)r->viewportX, (int16_t)r->viewportY,
+                     (int16_t)r->viewW, (int16_t)r->viewH};
+  OE2_captureWorld(rect);
+#else
   if (g_app->canvas->snapView) {
     int16_t rect[4] = {(int16_t)r->fbOffsetX, (int16_t)r->fbOffsetY,
                        (int16_t)r->width, (int16_t)r->height};
@@ -184,6 +191,7 @@ void OE2_captureRenderedWorld(Render *r) {
                        (int16_t)r->width, (int16_t)r->height};
     OE2_captureWorld(rect);
   }
+#endif
 }
 
 void OE2_loadHostConfig(void) {

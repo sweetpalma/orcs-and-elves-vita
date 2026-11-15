@@ -166,10 +166,10 @@ const uint32_t *BrewLight_gpu(const uint32_t *original,int w,int h){
  gpuParams[0]=numLights;gpuParams[1]=w;gpuParams[2]=h;gpuParams[3]=fadeLevel/255.f;
  gpuParams[4]=renderer->viewX;gpuParams[5]=renderer->viewY;gpuParams[6]=renderer->viewZ;gpuParams[7]=fx;
  gpuParams[8]=fy;gpuParams[9]=processingX;gpuParams[10]=processingY;gpuParams[11]=processingSteps*WALK_STEP;
- gpuParams[12]=renderer->effFloor;gpuParams[13]=renderer->effCeil;
+ gpuParams[12]=RENDER_FLOOR(renderer);gpuParams[13]=RENDER_CEIL(renderer);
  for(int j=0;j<numLights;j++){
   Light *l=&lights[j];float *p=&gpuParams[16+j*12];int phase=l->key%31;
-  float flicker=l->flicker?(.92f+.06f*sinf(g_app->time*.021f+phase*2)+.04f*sinf(g_app->time*.047f+phase)):1;
+  float flicker=l->flicker?(.92f+.06f*sinf(APP_TIME(g_app)*.021f+phase*2)+.04f*sinf(APP_TIME(g_app)*.047f+phase)):1;
   p[0]=l->x;p[1]=l->y;p[2]=l->z;p[3]=l->radius;p[4]=l->r;p[5]=l->g;p[6]=l->b;p[7]=l->power*flicker*2.1f;
   float dx=l->x-renderer->viewX,dy=l->y-renderer->viewY,depth=dx*fx+dy*fy,weight=worldLightWeight(l->x,l->y);
   if(l->key==2000||depth<12||weight<=0||!BrewLight_visible(renderer,renderer->viewX,renderer->viewY,renderer->viewZ,l->x,l->y,l->z))continue;

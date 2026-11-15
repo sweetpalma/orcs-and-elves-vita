@@ -740,7 +740,7 @@ int Canvas_handlePlayingEvents(Canvas *canvas, int avk, int unused)
 			action = ACT_MENU;
 	}
 
-	if (canvas->forceInterpolation && !viewAtDest(canvas))
+	if ((canvas->forceInterpolation || (canvas->numKeys > 0 && canvas->keyIsRepeat[0])) && !viewAtDest(canvas))
 		return 0;
 	if (canvas->moveCount != 0)
 		return 0;

@@ -55,7 +55,7 @@ int Bar_open(Bar *bar, const char *path)
 	for (k = 0; k < ntypes; k++) {
 		const uint8_t *t = bar->data + typedir + k * 8;
 		unsigned type = rd16(t), first = rd16(t + 2), span = rd16(t + 4), idx = rd16(t + 6);
-		if (type != 6)
+		if (type != 6 && type != 1)
 			continue;
 		for (j = 0; j <= span; j++) {
 			uint32_t o, e, hl;
@@ -66,8 +66,8 @@ int Bar_open(Bar *bar, const char *path)
 			e = (idx + j + 1 < nent) ? rd32(bar->data + tbl + 4 * (idx + j + 1)) : (uint32_t)bar->size;
 			if (bar->size < 2 || o > bar->size - 2 || e > bar->size || e < o)
 				continue;
-			hl = rd16(bar->data + o);
-			if (hl < 2 || hl > e - o)
+			hl = (type == 1) ? 1 : rd16(bar->data + o);
+			if ((type != 1 && hl < 2) || hl > e - o)
 				continue;
 			be = &bar->entries[bar->count++];
 			be->id = (int)(first + j);
@@ -94,8 +94,14 @@ int Bar_open(Bar *bar, const char *path)
 
 int Bar_isSupported(const Bar *bar)
 {
-	return bar->data && bar->size == BAR_EXPECTED_SIZE &&
-	       crc32(0L, bar->data, (uInt)bar->size) == BAR_EXPECTED_CRC32;
+	if (!bar || !bar->data)
+		return 0;
+	uLong crc = crc32(0L, bar->data, (uInt)bar->size);
+	if (bar->size == BAR_EXPECTED_SIZE_OE1 && crc == BAR_EXPECTED_CRC32_OE1)
+		return 1;
+	if (bar->size == BAR_EXPECTED_SIZE_OE2 && crc == BAR_EXPECTED_CRC32_OE2)
+		return 1;
+	return 0;
 }
 
 void Bar_close(Bar *bar)
@@ -108,9 +114,26 @@ void Bar_close(Bar *bar)
 const BarEntry *Bar_find(const Bar *bar, int id)
 {
 	for (int i = 0; i < bar->count; i++)
-		if (bar->entries[i].id == id)
+		if (bar->entries[i].id == id && bar->entries[i].type == 6)
 			return &bar->entries[i];
 	return NULL;
+}
+
+int Bar_loadString(const Bar *bar, int id, char *buf, int n)
+{
+	if (!bar || !bar->data || !buf || n <= 0)
+		return -1;
+	for (int i = 0; i < bar->count; i++) {
+		const BarEntry *e = &bar->entries[i];
+		if (e->id == id && e->type == 1) {
+			int len = (int)e->size < n - 1 ? (int)e->size : n - 1;
+			memcpy(buf, bar->data + e->offset, len);
+			buf[len] = '\0';
+			return len;
+		}
+	}
+	buf[0] = '\0';
+	return -1;
 }
 
 const BarEntry *Bar_findByName(const Bar *bar, const char *name)

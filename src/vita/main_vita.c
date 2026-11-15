@@ -15,6 +15,19 @@
 #include <psp2/kernel/processmgr.h>
 #endif
 
+#if defined(GAME_OE1)
+#define GAME_TITLE "Orcs & Elves"
+#define GAME_BAR_FILE "orcsandelves.bar"
+#define GAME_MOD_FILE "orcsandelves.mod"
+#define GAME_PRIMARY_DIR "ux0:data/oe1"
+#define GAME_FALLBACK_DIR "ux0:data/oe"
+#else
+#define GAME_TITLE "Orcs & Elves II"
+#define GAME_BAR_FILE "orcsandelves2.bar"
+#define GAME_MOD_FILE "orcsandelves2.mod"
+#define GAME_PRIMARY_DIR "ux0:data/oe2"
+#endif
+
 #define TICK_MS 40
 #define KEY_REPEAT_START 320
 #define KEY_REPEAT_RATE 80
@@ -22,20 +35,23 @@
 
 static const char *resolve_data_dir(void) {
   static const char *const candidates[] = {
-      "ux0:data/oe2",
+      GAME_PRIMARY_DIR,
+#if defined(GAME_FALLBACK_DIR)
+      GAME_FALLBACK_DIR,
+#endif
       "app0:data",
       "data",
   };
 #ifdef __vita__
   sceIoMkdir("ux0:data", 0777);
-  sceIoMkdir("ux0:data/oe2", 0777);
-  sceIoMkdir("ux0:data/oe2/saves", 0777);
+  sceIoMkdir(GAME_PRIMARY_DIR, 0777);
+  sceIoMkdir(GAME_PRIMARY_DIR "/saves", 0777);
 #endif
   for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); i++) {
     char bar_path[256];
     char mod_path[256];
-    snprintf(bar_path, sizeof(bar_path), "%s/orcsandelves2.bar", candidates[i]);
-    snprintf(mod_path, sizeof(mod_path), "%s/orcsandelves2.mod", candidates[i]);
+    snprintf(bar_path, sizeof(bar_path), "%s/" GAME_BAR_FILE, candidates[i]);
+    snprintf(mod_path, sizeof(mod_path), "%s/" GAME_MOD_FILE, candidates[i]);
     FILE *fb = fopen(bar_path, "rb");
     FILE *fm = fopen(mod_path, "rb");
     if (fb && fm) {
@@ -61,11 +77,19 @@ int main(int argc, char **argv) {
   (void)argv;
 
   if (!data) {
+#if defined(GAME_OE1)
     Plat_showError(
-        "Orcs & Elves II",
+        GAME_TITLE,
         "Could not find game data!\n\n"
-        "Please copy orcsandelves2.bar and\n"
-        "orcsandelves2.mod to ux0:data/oe2/");
+        "Please copy " GAME_BAR_FILE " and " GAME_MOD_FILE "\n"
+        "to " GAME_PRIMARY_DIR "/ (or " GAME_FALLBACK_DIR "/)");
+#else
+    Plat_showError(
+        GAME_TITLE,
+        "Could not find game data!\n\n"
+        "Please copy " GAME_BAR_FILE " and\n"
+        GAME_MOD_FILE " to " GAME_PRIMARY_DIR "/");
+#endif
     return 1;
   }
 
@@ -73,13 +97,13 @@ int main(int argc, char **argv) {
     char msg[256];
     snprintf(msg, sizeof(msg),
              "Failed to load game data from:\n%s\n\n"
-             "Please check that orcsandelves2.bar and\n"
-             "orcsandelves2.mod are valid BREW 7.0.41 files.",
+             "Please check that " GAME_BAR_FILE " and\n"
+             GAME_MOD_FILE " are valid BREW 7.0.41 files.",
              data);
-    Plat_showError("Orcs & Elves II", msg);
+    Plat_showError(GAME_TITLE, msg);
     return 1;
   }
-  if (Plat_init(w, h, "Orcs & Elves II") != 0) {
+  if (Plat_init(w, h, GAME_TITLE) != 0) {
     Brew_shutdown();
 #ifdef __vita__
     sceKernelExitProcess(1);
@@ -90,7 +114,7 @@ int main(int argc, char **argv) {
 
   app = App_create(w, h);
   if (!app) {
-    Plat_showError("Orcs & Elves II", "Engine startup failed.\nOut of memory or corrupted data.");
+    Plat_showError(GAME_TITLE, "Engine startup failed.\nOut of memory or corrupted data.");
     Plat_shutdown();
     Brew_shutdown();
 #ifdef __vita__
