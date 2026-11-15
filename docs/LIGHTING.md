@@ -72,9 +72,9 @@ typedef struct {
 #### Emitter Tables by Game Edition:
 
 - **Orcs & Elves (`GAME_OE1`):**
-  - **Wall Torches & Sconces:** Tile `116` (r=1.0, g=0.42, b=0.10, radius 230), `136` (Torchiere, radius 240), `181` (Wall sconce, radius 150), `185` (Fire sconce, radius 180).
-  - **Fires & Braziers:** Tile `130` (Fire, radius 240), `145` (Fire Portal, r=0.65, g=0.25, b=1.0, radius 200).
-  - **Healing Crystals (Gaya's Hub / Caverns):** Tile `165` (r=0.15, g=0.45, b=1.0, radius 450, power 1.4).
+  - **Wall Torches & Sconces:** Tile `116` (r=1.0, g=0.42, b=0.10, radius 230), `136` (Torchiere, radius 190, power 1.8), `181` (Wall sconce, radius 150), `185` (Fire sconce, radius 180).
+  - **Fires & Braziers:** Tile `130` (Fire, radius 240), `145` (Fire Portal, r=0.80, g=0.35, b=1.0, radius 180, power 2.4, constant glow).
+  - **Healing Crystals (Gaya's Hub / Caverns):** Tile `165` (r=0.15, g=0.50, b=1.0, radius 240, power 2.2).
   - **Elemental Flames & Gems:** Tiles `220..223` (colored gems/crystals), `224`/`225` (blue/cyan magic flame), `227` (torch glow), `230` (fire column), `235` (purple fire), `238` (brazier flame), `242..245` (tinted glows), `252` (portal gate glow).
 
 - **Orcs & Elves II (`OE2`):**
@@ -120,7 +120,7 @@ static float selectionScore(int key, float lx, float ly, float distanceSquared) 
   float score = dist * dirWeight;
   // Hysteresis: retain previously active lights to avoid frame-to-frame flicker
   for (int i = 0; i < retainedCount; i++) {
-    if (retainedKeys[i] == key) return score * 0.75f;
+    if (retainedKeys[i] == key) return score * 0.60f;
   }
   return score;
 }

@@ -12,7 +12,11 @@
 #include <time.h>
 
 static int remasteredMode = 1;
+#if defined(GAME_OE1)
+static const int rangeSteps = 14;
+#else
 static const int rangeSteps = 20;
+#endif
 static int hostConfigLoaded = 0;
 static int skipPresent = 0;
 static uint32_t worldPixels[640 * 640];

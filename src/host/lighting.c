@@ -150,7 +150,7 @@ typedef struct {
 #if defined(GAME_OE1)
 static const Source sources[] = {{116, 1, .42f, .10f, 230, 2.2f, -20, 1},
                                  {130, 1, .40f, .10f, 240, 2.2f, 0, 1},
-                                 {136, 1, .52f, .19f, 240, 2.0f, 24, 1},
+                                 {136, 1, .52f, .19f, 190, 1.8f, 24, 1},
                                  {181, 1, .68f, .37f, 150, 1.2f, 14, 1},
                                  {224, .25f, .55f, 1, 170, 1.3f, 0, 0},
                                  {230, 1, .75f, .20f, 150, 1.3f, 0, 0},
@@ -166,8 +166,8 @@ static const Source sources[] = {{116, 1, .42f, .10f, 230, 2.2f, -20, 1},
                                  {243, .14f, .30f, 1, 130, 1.0f, 0, 0},
                                  {245, .2f, 1, .25f, 130, 1.0f, 0, 0},
                                  {252, .55f, .65f, 1, 170, 1.4f, 0, 1},
-                                 {145, .65f, .25f, 1.f, 200, 1.6f, 20, 1},
-                                 {165, .15f, .45f, 1.f, 450, 1.4f, 16, 0},
+                                 {145, .80f, .35f, 1.f, 180, 2.4f, 20, 0},
+                                 {165, .15f, .50f, 1.f, 240, 2.2f, 16, 0},
                                  {185, 1.f, .45f, .18f, 180, 1.2f, 24, 1}};
 #else
 static const Source sources[] = {{116, 1, .42f, .10f, 230, 2.2f, -20, 1},
@@ -904,8 +904,10 @@ int BrewLight_visible(const Render *r, float ax, float ay, float az, float bx,
   int sx = dx > 0 ? 1 : -1, sy = dy > 0 ? 1 : -1;
   float invDx = dx != 0 ? 1.f / dx : 0.f;
   float invDy = dy != 0 ? 1.f / dy : 0.f;
-  float tx = dx == 0 ? INFINITY : (TRACE_ORIGIN + (x + (sx > 0)) * 64 - ax) * invDx,
-        ty = dy == 0 ? INFINITY : (TRACE_ORIGIN + (y + (sy > 0)) * 64 - ay) * invDy;
+  float tx = dx == 0 ? INFINITY
+                     : (TRACE_ORIGIN + (x + (sx > 0)) * 64 - ax) * invDx,
+        ty = dy == 0 ? INFINITY
+                     : (TRACE_ORIGIN + (y + (sy > 0)) * 64 - ay) * invDy;
   float stepX = dx == 0 ? INFINITY : 64.f * fabsf(invDx),
         stepY = dy == 0 ? INFINITY : 64.f * fabsf(invDy);
   int tested[32];
@@ -1026,8 +1028,8 @@ static int lightInRegion(float distanceSquared, float radius) {
   float reach = processingSteps * WALK_STEP + radius;
   return distanceSquared <= reach * reach;
 }
-static float selectionScore(int key, float lx, float ly,
-                            float distanceSquared, float radius, float power) {
+static float selectionScore(int key, float lx, float ly, float distanceSquared,
+                            float radius, float power) {
   /* Prioritize lights that illuminate what the player is actually looking at.
    * Lights in the player's forward view frustum get a priority boost, while
    * lights behind the camera are penalized relative to their influence radius
@@ -1052,7 +1054,7 @@ static float selectionScore(int key, float lx, float ly,
   float score = (dist * dirWeight) / strength;
   for (int i = 0; i < retainedCount; i++)
     if (retainedKeys[i] == key)
-      return score * .75f;
+      return score * .60f;
   return score;
 }
 #ifdef OE_QA_INTERACTIONS
@@ -1283,8 +1285,8 @@ int BrewLight_qaSourcePoint(int index, int field) {
 }
 #endif
 #ifdef OE_NO_SPRITE_SHADOWS
-#define FLOOR_SHADOW_SLOTS 16
-#define ROOM_DIST_SLOTS 16
+#define FLOOR_SHADOW_SLOTS 64
+#define ROOM_DIST_SLOTS 64
 typedef struct {
   uint32_t validGen;
   int u, v, iz, sprites;
@@ -1366,7 +1368,8 @@ static void gather(Render *r) {
     if (!p->flicker && numStaticEmitters < 128 && numClusters < 64) {
       int tile = s->info & 255;
       float sx = (float)s->x, sy = (float)s->y, sz = s->z + p->height;
-      float mergeR = p->radius >= 300.f ? 192.f : 96.f;
+      float mergeR =
+          (tile == 165) ? 144.f : (p->radius >= 300.f ? 192.f : 96.f);
       float mergeR2 = mergeR * mergeR;
       int cid = -1;
       for (int c = 0; c < numClusters; c++) {
@@ -1428,9 +1431,10 @@ static void gather(Render *r) {
         bestY = staticEmitters[e].y;
       }
     }
-    float power = p->power * (1.f + 0.12f * fminf((float)(clusters[c].count - 1), 3.f));
-    Light l = {bestX, bestY, cz, p->r, p->g, p->b, p->radius, power, p->flicker,
-               clusters[c].minKey};
+    float power =
+        p->power * (1.f + 0.12f * fminf((float)(clusters[c].count - 1), 3.f));
+    Light l = {bestX, bestY,     cz,    p->r,       p->g,
+               p->b,  p->radius, power, p->flicker, clusters[c].minKey};
     candidate(l, processingX, processingY);
   }
 #ifdef OE_NO_SPRITE_SHADOWS
@@ -1978,7 +1982,7 @@ static inline void initShadowCoord(const Surface *s, float sx, float sy,
     sc->v = v;
     sc->tx = a - u;
     sc->ty = b - v;
-    sc->floorSlot = ((v & 3) << 2) | (u & 3);
+    sc->floorSlot = ((v & 7) << 3) | (u & 7);
   } else {
     int axis = abs(s->nx) >= abs(s->ny);
     sc->axis = axis;
@@ -2025,17 +2029,15 @@ static float shadowCoordCtx(const ShadowSampleCoord *sc, int light, int column,
   if (sc->axis) {
     low = mixf(visibilityAt(sc->ix, sc->u, sc->v, light, sprites),
                visibilityAt(sc->ix, sc->u + 1, sc->v, light, sprites), sc->tx);
-    high =
-        mixf(visibilityAt(sc->ix, sc->u, sc->v + 1, light, sprites),
-             visibilityAt(sc->ix, sc->u + 1, sc->v + 1, light, sprites),
-             sc->tx);
+    high = mixf(visibilityAt(sc->ix, sc->u, sc->v + 1, light, sprites),
+                visibilityAt(sc->ix, sc->u + 1, sc->v + 1, light, sprites),
+                sc->tx);
   } else {
     low = mixf(visibilityAt(sc->u, sc->iy, sc->v, light, sprites),
                visibilityAt(sc->u + 1, sc->iy, sc->v, light, sprites), sc->tx);
-    high =
-        mixf(visibilityAt(sc->u, sc->iy, sc->v + 1, light, sprites),
-             visibilityAt(sc->u + 1, sc->iy, sc->v + 1, light, sprites),
-             sc->tx);
+    high = mixf(visibilityAt(sc->u, sc->iy, sc->v + 1, light, sprites),
+                visibilityAt(sc->u + 1, sc->iy, sc->v + 1, light, sprites),
+                sc->tx);
   }
   if (cache)
     *cache = (ShadowColumn){shadowFrameGen, sc->axis, sc->fixed, sc->u, sc->v,
@@ -2143,7 +2145,7 @@ static float roomDistanceCtx(const Surface *s, int axis, LightWorkerCtx *ctx) {
   float x = surfX(s) * (1.f / 16.f), y = surfY(s) * (1.f / 16.f);
   int ix = fastFloorf(x), iy = fastFloorf(y), snz = surfNz(s);
   int layer = snz ? (snz > 0 ? 0 : 1) : 2;
-  RoomDistCache *rc = &ctx->roomDistCache[((iy & 3) << 2) | (ix & 3)];
+  RoomDistCache *rc = &ctx->roomDistCache[((iy & 7) << 3) | (ix & 7)];
   if (rc->validGen != shadowFrameGen || rc->ix != ix || rc->iy != iy ||
       rc->axis != axis || rc->layer != layer) {
     rc->validGen = shadowFrameGen;
@@ -2388,14 +2390,14 @@ static void incidentEnergyCtx(const Surface *s, const float *flicker,
     float d = sqrtf(d2);
     float attenuation = 1.f - d * lightInvRadius[j];
     float maxE = weight * attenuation * attenuation * lightGain[j];
-    if (maxE < 0.008f)
+    if (maxE < 0.020f)
       continue;
     float invD127 = (1.f / 127.f) / (d + .01f);
     float ndotl = (s->nx * dx + s->ny * dy + snz * dz) * invD127;
-    float lambert = (kind == 3) ? clampf(ndotl * .5f + .5f, 0.f, 1.f)
+    float lambert = (kind == 3) ? clampf(ndotl * .35f + .65f, 0.f, 1.f)
                                 : clampf(ndotl, 0.f, 1.f);
     float e = maxE * (.18f + .82f * lambert);
-    if (e < 0.008f)
+    if (e < 0.020f)
       continue;
 #ifdef OE_QA_INTERACTIONS
     if (kind != 4) {
@@ -2405,14 +2407,23 @@ static void incidentEnergyCtx(const Surface *s, const float *flicker,
     }
 #else
     if (kind != 4 && l->key != 2000) {
-      if (!sc.init)
-        initShadowCoord(s, sx, sy, sz, snz, &sc);
-      e *= shadowCoordCtx(&sc, j, column, ctx) * shadowScale;
+      if (kind == 3 && d < 48.f) {
+        /* Direct illumination from emitter sprite's own light source */
+      } else {
+        if (!sc.init)
+          initShadowCoord(s, sx, sy, sz, snz, &sc);
+        e *= shadowCoordCtx(&sc, j, column, ctx) * shadowScale;
+      }
     }
 #endif
     energy[0] += l->r * e;
     energy[1] += l->g * e;
     energy[2] += l->b * e;
+  }
+  if (kind == 3) {
+    for (int ch = 0; ch < 3; ch++)
+      if (energy[ch] < 0.35f)
+        energy[ch] = 0.35f;
   }
   if (kind != 4 && kind != 3) {
     for (int ch = 0; ch < 3; ch++) {
@@ -2459,7 +2470,7 @@ static void incidentEnergy(const Surface *s, const float *flicker, int column,
       continue;
     float d = sqrtf(d2) + .01f;
     float ndotl = (s->nx * dx + s->ny * dy + snz * dz) / (127 * d);
-    float lambert = (kind == 3) ? clampf(ndotl * .5f + .5f, 0.f, 1.f)
+    float lambert = (kind == 3) ? clampf(ndotl * .35f + .65f, 0.f, 1.f)
                                 : clampf(ndotl, 0.f, 1.f);
     float attenuation = 1 - d / l->radius;
     float e = weight * attenuation * attenuation * l->power * flicker[j] *
@@ -2468,12 +2479,22 @@ static void incidentEnergy(const Surface *s, const float *flicker, int column,
     if (kind != 4)
       e *= shadow(s, j, column) * (.75f + .25f * ao);
 #else
-    if (kind != 4 && l->key != 2000)
-      e *= shadow(s, j, column) * (.75f + .25f * ao);
+    if (kind != 4 && l->key != 2000) {
+      if (kind == 3 && d < 48.f) {
+        /* Direct illumination from emitter sprite's own light source */
+      } else {
+        e *= shadow(s, j, column) * (.75f + .25f * ao);
+      }
+    }
 #endif
     energy[0] += l->r * e;
     energy[1] += l->g * e;
     energy[2] += l->b * e;
+  }
+  if (kind == 3) {
+    for (int ch = 0; ch < 3; ch++)
+      if (energy[ch] < 0.35f)
+        energy[ch] = 0.35f;
   }
   if (kind != 4 && kind != 3) {
     for (int ch = 0; ch < 3; ch++) {
@@ -2897,15 +2918,16 @@ static inline int compatibleSpan(const Surface *s0, const Surface *sMid,
 static inline uint32_t shadeQ10Pixel(uint32_t c, const uint16_t *e) {
   uint32_t i0 = ((uint32_t)byteToLinearQ10[c & 255] * e[0] + 512u) >> 10;
   uint32_t i1 = ((uint32_t)byteToLinearQ10[(c >> 8) & 255] * e[1] + 512u) >> 10;
-  uint32_t i2 = ((uint32_t)byteToLinearQ10[(c >> 16) & 255] * e[2] + 512u) >> 10;
+  uint32_t i2 =
+      ((uint32_t)byteToLinearQ10[(c >> 16) & 255] * e[2] + 512u) >> 10;
   if (i0 > 4096u)
     i0 = 4096u;
   if (i1 > 4096u)
     i1 = 4096u;
   if (i2 > 4096u)
     i2 = 4096u;
-  return 0xff000000u | (uint32_t)toneLUT[i0] |
-         (((uint32_t)toneLUT[i1]) << 8) | (((uint32_t)toneLUT[i2]) << 16);
+  return 0xff000000u | (uint32_t)toneLUT[i0] | (((uint32_t)toneLUT[i1]) << 8) |
+         (((uint32_t)toneLUT[i2]) << 16);
 }
 static void lightRunRange(LightWorkerCtx *ctx, const uint32_t *original,
                           const float *flicker, int w, int h, int shift,
@@ -3370,8 +3392,7 @@ static void lightRunRange(LightWorkerCtx *ctx, const uint32_t *original,
           e[2] = ctx->weaponEnergyQ10[2];
         } else if (y + 1 < h) {
           const Surface *sU = &surfBase[i - w], *sD = &surfBase[i + w];
-          if (compatibleSurface(sU, s, sD) &&
-              lowResReady[i - w] == readyTag &&
+          if (compatibleSurface(sU, s, sD) && lowResReady[i - w] == readyTag &&
               lowResReady[i + w] == readyTag) {
             const uint16_t *eu = lowResEnergyQ10[i - w];
             const uint16_t *ed = lowResEnergyQ10[i + w];
@@ -3660,8 +3681,8 @@ static const uint32_t *present(const uint32_t *original, int w, int h,
       lightRadius2[j] = lights[j].radius * lights[j].radius;
       lightInvRadius[j] = lights[j].radius > 0.f ? 1.f / lights[j].radius : 0.f;
       lightGain[j] = lights[j].power * flicker[j] * 2.1f;
-      if (lightGain[j] > 0.008f && lights[j].radius > 0.f) {
-        float rEff = lights[j].radius * (1.f - sqrtf(0.008f / lightGain[j]));
+      if (lightGain[j] > 0.020f && lights[j].radius > 0.f) {
+        float rEff = lights[j].radius * (1.f - sqrtf(0.020f / lightGain[j]));
         lightEffR2[j] = rEff > 0.f ? rEff * rEff : 0.f;
       } else {
         lightEffR2[j] = 0.f;
