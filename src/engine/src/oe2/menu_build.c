@@ -760,14 +760,7 @@ static void buildOptions(Menu *menu, MenuSystem *ms, int menuId) {
   String_setLength(&menu->scratch0, 0);
   String_appendCStr_76f0(&menu->scratch0, "Lighting:");
   String_setLength(&menu->scratch1, 0);
-  Text_getString(cv, TEXT_GROUP_MENU, onOff(OE2_isRemastered()),
-                 &menu->scratch1);
-  MenuSystem_addItem(menu, &menu->scratch0, &menu->scratch1, 0);
-
-  String_setLength(&menu->scratch0, 0);
-  String_appendCStr_76f0(&menu->scratch0, "Speed:");
-  String_setLength(&menu->scratch1, 0);
-  String_appendCStr_76f0(&menu->scratch1, OE2_isFastTick() ? "Fast" : "Slow");
+  String_appendCStr_76f0(&menu->scratch1, OE2_isRemastered() ? "On" : "Off");
   MenuSystem_addItem(menu, &menu->scratch0, &menu->scratch1, 0);
 #endif
 }

@@ -6,7 +6,7 @@
 
 - **Widescreen patch:** Renders at `352×200` widescreen (instead of the original `176×220` phone layout) scaled to the PS Vita's `960×544` screen.
 - **Remastered lighting:** Adds real-time point lighting, geometric ray shadows, contact ambient occlusion, and projectile impact flashes while keeping all original BREW textures and sprites, switchable in Options with Classic mode.
-- **Faithful simulation:** Preserves the original BREW gameplay and RNG, with a **Speed** setting in Options (`Fast` 60 Hz default, or `Slow` 25 Hz original timing).
+- **Faithful simulation:** Preserves the original BREW gameplay timing and RNG.
 - **Fully tested:** Completely playable and tested from start to finish on real PlayStation Vita hardware.
 
 ## Installation

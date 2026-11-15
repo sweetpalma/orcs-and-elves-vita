@@ -7,25 +7,19 @@
 #include "standalone_bridge.h"
 
 int Options_count(void) {
-	return 2;
+	return 1;
 }
 
 void Options_row(int i, char *label, char *value) {
 	if (i == 0) {
 		strcpy(label, "Lighting:");
 		strcpy(value, OE2_isRemastered() ? "On" : "Off");
-	} else if (i == 1) {
-		strcpy(label, "Speed:");
-		strcpy(value, OE2_isFastTick() ? "Fast" : "Slow");
 	}
 }
 
 int Options_select(int i) {
 	if (i == 0) {
 		OE2_toggleRemastered();
-		return 1;
-	} else if (i == 1) {
-		OE2_toggleFastTick();
 		return 1;
 	}
 	return 0;

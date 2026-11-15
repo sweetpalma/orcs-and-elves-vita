@@ -12,9 +12,8 @@
 #include <time.h>
 
 static int remasteredMode = 1;
-static const int rangeSteps = 20; /* Max lighting reach (20 tiles / 1280 units) */
+static const int rangeSteps = 20;
 static int hostConfigLoaded = 0;
-static int fastTickMode = 1; /* 1 = Fast (8 ms OE1 / 16 ms OE2), 0 = Slow (15 ms OE1 / 40 ms OE2) */
 static int skipPresent = 0;
 static uint32_t worldPixels[640 * 640];
 static uint32_t litPixels[640 * 640];
@@ -202,10 +201,6 @@ void OE2_loadHostConfig(void) {
     if (len >= 8 && data[0] == 'O' && data[1] == 'E' && data[2] == 'L' &&
         data[3] == 'C') {
       remasteredMode = data[4] ? 1 : 0;
-      if (data[6] == 1)
-        fastTickMode = 1;
-      else if (data[6] == 2)
-        fastTickMode = 0;
     }
     free(data);
   }
@@ -226,7 +221,7 @@ void OE2_saveHostConfig(void) {
                     'C',
                     (uint8_t)(remasteredMode ? 1 : 0),
                     (uint8_t)rangeSteps,
-                    (uint8_t)(fastTickMode ? 1 : 2),
+                    0,
                     0};
   Plat_fileWrite("LightingCfg", buf, sizeof(buf));
 }
@@ -279,24 +274,16 @@ int OE2_toggleRemastered(void) {
   return remasteredMode;
 }
 
-int OE2_isFastTick(void) {
-  ensure_host_config();
-  return fastTickMode;
-}
+int OE2_isFastTick(void) { return 0; }
 
-int OE2_toggleFastTick(void) {
-  ensure_host_config();
-  fastTickMode = !fastTickMode;
-  OE2_saveHostConfig();
-  return fastTickMode;
-}
+int OE2_toggleFastTick(void) { return 0; }
 
 int OE2_getTickMs(void) {
   ensure_host_config();
 #if defined(GAME_OE1)
-  return fastTickMode ? 8 : 15;
+  return 15;
 #else
-  return fastTickMode ? 16 : 40;
+  return 40;
 #endif
 }
 
@@ -305,9 +292,7 @@ void OE2_setSkipPresent(int skip) {
   BrewLight_setSkip(skipPresent);
 }
 
-int OE2_shouldSkipPresent(void) {
-  return skipPresent;
-}
+int OE2_shouldSkipPresent(void) { return skipPresent; }
 
 /* Minimal 4x5 uppercase glyph table for the mode toggle toast. */
 static uint32_t glyph_bits(char c) {

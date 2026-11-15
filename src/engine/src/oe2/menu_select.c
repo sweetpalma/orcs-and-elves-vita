@@ -265,11 +265,7 @@ static int selectOptions(Menu *menus, int item)
 		} else if (item == 4) {
 			int on = OE2_toggleRemastered();
 			String_setLength(&ms->items[4].text2, 0);
-			Text_getString(cv, TEXT_GROUP_MENU, on ? 0x84 : 0x85, &ms->items[4].text2);
-		} else if (item == 5) {
-			int fast = OE2_toggleFastTick();
-			String_setLength(&ms->items[5].text2, 0);
-			String_appendCStr_76f0(&ms->items[5].text2, fast ? "Fast" : "Slow");
+			String_appendCStr_76f0(&ms->items[4].text2, on ? "On" : "Off");
 #endif
 		}
 	} else {
@@ -310,13 +306,7 @@ static int selectOptions(Menu *menus, int item)
 		} else if (item == 3) {
 			int on = OE2_toggleRemastered();
 			String_setLength(&ms->items[3].text2, 0);
-			Text_getString(cv, TEXT_GROUP_MENU, on ? 0x84 : 0x85, &ms->items[3].text2);
-			Game_saveConfig(app->game);
-			return ms->menu;
-		} else if (item == 4) {
-			int fast = OE2_toggleFastTick();
-			String_setLength(&ms->items[4].text2, 0);
-			String_appendCStr_76f0(&ms->items[4].text2, fast ? "Fast" : "Slow");
+			String_appendCStr_76f0(&ms->items[3].text2, on ? "On" : "Off");
 			Game_saveConfig(app->game);
 			return ms->menu;
 #endif
