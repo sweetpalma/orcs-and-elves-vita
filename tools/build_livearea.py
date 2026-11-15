@@ -146,7 +146,10 @@ def build_livearea_assets(bar_path: Path, output_dir: Path, game: str = None):
 
     def render_canvas(cw: int, ch: int, logo_scale: int, draw_logo: bool = True):
         crop_h = min(map_h, max(1, round(map_w * ch / cw)))
-        crop_y = max(0, min(map_h - crop_h, 255 - crop_h // 2))
+        if is_oe1:
+            crop_y = max(0, (map_h - crop_h) // 2)
+        else:
+            crop_y = max(0, min(map_h - crop_h, 255 - crop_h // 2))
         rows = []
         for y in range(ch):
             sy = crop_y + (y * crop_h // ch)
