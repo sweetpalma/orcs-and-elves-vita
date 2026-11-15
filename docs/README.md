@@ -13,5 +13,8 @@ This directory contains technical documentation, system architecture references,
 - `ENVIRONMENT.md`:
   Complete reference for all build variables, compile-time flags, CLI options, and runtime environment variables (`OE_DATA_DIR`, `OE_PIPE`, `OE_REMASTERED`, `OE_STANDALONE_BRIDGE`, etc.).
 
+- `TESTING.md`:
+  Automated testing guide and reference for `tools/oe2test.py` and the `OE_PIPE` headless harness: automated smoke tests, telemetry parsing, deterministic world hashing, CLI usage, and Python API examples.
+
 - `RESOURCES.md`:
   Reverse-engineered binary formats and resource layout for Qualcomm BREW 7.x (`orcsandelves2.bar`): entity records, weapon definitions, string tables, 32x32 map BSP formats, graphics mappings, bitshapes, texels, and palettes.

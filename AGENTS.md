@@ -2,7 +2,9 @@
 
 - Work only in this project. Do not change WolfMoon or the previous working port.
 - The sole gameplay foundation is BREW 7.0.41 and the reconstructed C engine in `src/engine/`.
-- Consult `docs/` for technical context, engine architecture, and lighting findings. Use `tools/oe2data.py` to inspect BREW `.bar` resources, strings, entities, and map bodies.
+- Consult `docs/` for technical context, engine architecture, and lighting findings.
+- Use `tools/oe2data.py` to inspect BREW `.bar` resources, strings, entities, and map bodies.
+- Use `tools/oe2test.py` for automated headless testing, regression checks, and PNG screenshot captures.
 - Keep Classic as original BREW graphics. Remastered shares the same simulation and saves - only presentation changes.
 - Original archives, gamedata, generated builds and downloaded tools stay out of Git.
 - Preserve upstream GPLv3 license and author attribution. Record sources and local modifications.

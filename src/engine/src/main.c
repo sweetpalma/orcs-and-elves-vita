@@ -220,18 +220,28 @@ static int pipe_tick(int tick) {
     write_ppm(line + 5);
   } else if (!strncmp(line, "tp ", 3)) {
     Canvas *cv = g_app->canvas;
-#if defined(GAME_OE1)
     int tx, ty, ang = -1;
     if (sscanf(line + 3, "%d %d %d", &tx, &ty, &ang) >= 2) {
       cv->viewX = cv->destX = tx * 64 + 32;
       cv->viewY = cv->destY = ty * 64 + 32;
       if (ang >= 0)
         cv->viewAngle = cv->destAngle = ang;
+#if defined(GAME_OE1)
       Canvas_finishRotation(cv);
+#else
+      Game_unlinkEntityById(g_app->player);
+      Canvas_finishRotation(cv, 1);
+      Game_relinkEntity(g_app->player);
+#endif
     }
   } else if (!strncmp(line, "map ", 4)) {
     int mapId = atoi(line + 4);
+#if defined(GAME_OE1)
     Canvas_loadMap(g_app->canvas, mapId, 1);
+#else
+    Canvas_loadMapEx(g_app->canvas, mapId, 1);
+#endif
+#if defined(GAME_OE1)
   } else if (!strncmp(line, "dialog ", 7)) {
     int style = atoi(line + 7);
     char *text = strchr(line + 7, ' ');
@@ -240,16 +250,6 @@ static int pipe_tick(int tick) {
     else
       text = "Test dialog";
     Canvas_showDialog(g_app->canvas, NULL, text, style, 0, 0);
-#else
-    int tx, ty;
-    if (sscanf(line + 3, "%d %d", &tx, &ty) == 2) {
-      cv->viewX = cv->destX = tx * 64 + 32;
-      cv->viewY = cv->destY = ty * 64 + 32;
-      cv->viewAngle = cv->destAngle;
-      Game_unlinkEntityById(g_app->player);
-      Canvas_finishRotation(cv, 1);
-      Game_relinkEntity(g_app->player);
-    }
 #endif
   } else {
     for (tok = strtok_r(line, " ", &save); tok;
