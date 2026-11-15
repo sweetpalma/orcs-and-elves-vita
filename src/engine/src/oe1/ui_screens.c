@@ -76,10 +76,14 @@ void Canvas_drawAutomap(Canvas *canvas, int full)
 	Render *render = canvas->render;
 	Game *game = canvas->game;
 	int size, cell, ox, oy, scale, row, col, i, dir, sy, px, py;
+	int boxW = canvas->screenW > 176 ? 176 : canvas->screenW;
+	int boxH = canvas->softKeyBarY > 200 ? 200 : canvas->softKeyBarY;
+	int boxX = (canvas->screenW - boxW) / 2 - canvas->originX;
+	int boxY = (canvas->softKeyBarY - boxH) / 2 - canvas->originY;
 
-	size = canvas->screenW - 8;
-	if (canvas->softKeyBarY - 0x1c <= size)
-		size = canvas->softKeyBarY - 0x1c;
+	size = boxW - 8;
+	if (boxH - 0x1c <= size)
+		size = boxH - 0x1c;
 	cell = size / 32;
 	ox = canvas->screenW / 2 - cell * 16 - canvas->originX;
 	oy = canvas->softKeyBarY / 2 - cell * 16 - canvas->originY;
@@ -88,8 +92,8 @@ void Canvas_drawAutomap(Canvas *canvas, int full)
 	if (full) {
 		int thick;
 
-		Ui_clearScreenRect(0, 0, canvas->screenW, canvas->softKeyBarY);
-		Canvas_drawDialogFrame(canvas, -canvas->originX, -canvas->originY, canvas->screenW, canvas->softKeyBarY, 0);
+		Ui_clearScreenRect(0, 0, canvas->screenW, canvas->screenH);
+		Canvas_drawDialogFrame(canvas, boxX, boxY, boxW, boxH, 0);
 
 		/* tiles and what stands on them */
 		for (row = 0; row < 32; row++) {
@@ -100,6 +104,9 @@ void Canvas_drawAutomap(Canvas *canvas, int full)
 				uint8_t flags = render->mapFlags[idx];
 				int drawn = 0;
 				Entity *ent;
+
+				if (!(flags & 0x10))
+					continue;
 
 				if (flags & 4) {
 					/* lower-right half hatched: tiles with an event-line texture */
@@ -117,7 +124,7 @@ void Canvas_drawAutomap(Canvas *canvas, int full)
 								Gfx_fillRect(canvas->app, cx + k, cy + j, step, step);
 						}
 					}
-				} else if ((flags & 0x10) && !(flags & 1)) {
+				} else if (!(flags & 1)) {
 					drawn = 1;
 					Gfx_setColor(canvas->app, AM_FLOOR);
 					Gfx_fillRect(canvas->app, cx, cy, cell, cell);

@@ -675,6 +675,40 @@ void Player_showHelp(Player *player, int id, int force)
 
 	off = helpTextOffset(id);
 	text = off != 0 ? (char *)ModData_str(&g_mod, off) : NULL;
+#ifdef OE_STANDALONE_BRIDGE
+	switch (id) {
+	case 0:
+		text = "TALK|When a chat bubble appears at the top left--hand side of the screen, press CROSS to talk with the character facing you.";
+		break;
+	case 3:
+		text = "RUNE LOCKS|You're facing a Rune Lock. To unlock it, you'll need the correct rune combination. An invalid combination will cause you bodily harm. Press CROSS and use the D--Pad to choose the correct sequence of runes. Some scrolls and characters in the game may be of help.";
+		break;
+	case 4:
+		text = "BARRICADES|Some passages in the game have been barricaded. You will need to break these down with a short--range weapon. Use TRIANGLE to cycle weapons to your sword and press CROSS to break the barricade.";
+		break;
+	case 5:
+		text = "WIELD WAND|The Wand will have important information for you when the chat bubble above it displays the word \"me\". Wield your Wand to get the information or the Wand will become belligerent. You will need the information to progress in the game. Use TRIANGLE to cycle to your Wand -- upon selection, the information will be given.";
+		break;
+	case 6:
+	case 7:
+		text = "WIELD WAND|Your Wand has important information for you. Wield your Wand to get this information. Use TRIANGLE to cycle weapons.";
+		break;
+	case 10:
+		text = "NOTE|Your Wand has just inscribed a note into your Quest Log. To view your Quest Log, open the menu (START) then select \"Quest Log\".";
+		break;
+	case 18:
+		text = "DOORS|You are facing a door. Doors can be opened by pressing CROSS, however some doors are locked and must be unlocked by some other means before you can open them.";
+		break;
+	case 19:
+		text = "HEALING CRYSTALS|You are facing Healing Crystals. These Crystals are the source of the Wand's power. Through using these Crystals, you can be healed and the Wand's power fully charged. Press CROSS to use the Healing Crystals.";
+		break;
+	case 20:
+		text = "ARMOR LOW|Your armor's durability (visible on your HUD to the right of the shield icon) is running low. When your armor's durability reaches 0 your armor will no longer deflect damage during combat. Use an Armor Kit to repair your armor by opening the menu (START), going to \"Items\", and then to \"Other\".||Tip: You can read more about armor at \"Armor Help\" under the \"Help\" menu.";
+		break;
+	default:
+		break;
+	}
+#endif
 	Canvas_addHelpMessage(player->canvas, text, 0);
 	if (id != 10)
 		Canvas_dequeueHelpDialog(player->canvas, 0);

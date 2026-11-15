@@ -241,6 +241,10 @@ static int pipe_tick(int tick) {
 #else
     Canvas_loadMapEx(g_app->canvas, mapId, 1);
 #endif
+  } else if (!strncmp(line, "menu ", 5)) {
+    int menuId = atoi(line + 5);
+    MenuSystem_setMenu(g_app->menuSystem, menuId);
+    Canvas_setState(g_app->canvas, 2);
 #if defined(GAME_OE1)
   } else if (!strncmp(line, "dialog ", 7)) {
     int style = atoi(line + 7);

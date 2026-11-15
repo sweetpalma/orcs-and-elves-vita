@@ -385,7 +385,30 @@ void MenuSystem_loadHelpEffects(Menu *menu)
 /* 0x00001f58 "How to Play" page. */
 void MenuSystem_loadHelp(Menu *menu)
 {
+#ifdef OE_STANDALONE_BRIDGE
+	static const char vitaHelp[] =
+		"=HOW TO PLAY\n"
+		"Use the Left Stick or D--Pad to move, turn, and navigate menus. "
+		"Press CROSS to talk, attack, and perform other actions.\n\n"
+		"=CONTROLS\n"
+		"CROSS Attack / Talk\n"
+		"SQUARE Pass / Skip\n"
+		"SELECT Automap\n"
+		"START Menu / Pause\n"
+		"CIRCLE Back / Cancel\n"
+		"TRIANGLE Next Weapon\n"
+		"L+TRIANGLE Prev Wpn\n\n"
+		"=MOVEMENT\n"
+		"UP Move Forward\n"
+		"DOWN Move Back\n"
+		"LEFT Turn Left\n"
+		"RIGHT Turn Right\n"
+		"L Strafe Left\n"
+		"R Strafe Right\n";
+	MenuSystem_addTextLines(menu, (char *)vitaHelp);
+#else
 	loadTextPage(menu, RES_HELP, 1, 0);
+#endif
 }
 
 /* 0x00002180 Item-usage help page. */

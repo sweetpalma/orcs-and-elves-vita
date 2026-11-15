@@ -460,6 +460,8 @@ static void mix_cb(void *ud, Uint8 *stream, int len) {
 }
 
 int Audio_init(void) {
+  if (getenv("OE_PIPE"))
+    return 0;
   SDL_AudioSpec want;
   SDL_zero(want);
   want.freq = 48000;

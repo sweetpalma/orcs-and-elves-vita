@@ -1063,6 +1063,31 @@ int Render_beginLoadMapData(Render *render)
 			if (len > 0)
 				strncpy(str, (const char *)buf + *pos, (size_t)len);
 			str[len > 0 ? len : 0] = '\0';
+#ifdef OE_STANDALONE_BRIDGE
+			{
+				/* Modernize mobile key instructions to PS Vita controls */
+				char *p;
+				while ((p = strstr(str, "press-ing the # key or by go-ing to the 'View Map' menu en-try (key 0)")) != NULL) {
+					const char *repl = "press-ing SELECT or by go-ing to the 'View Map' menu en-try (START)";
+					size_t rlen = strlen(repl), olen = strlen("press-ing the # key or by go-ing to the 'View Map' menu en-try (key 0)");
+					memcpy(p, repl, rlen);
+					memmove(p + rlen, p + olen, strlen(p + olen) + 1);
+				}
+				while ((p = strstr(str, "press-ing the \"9\" key")) != NULL) {
+					const char *repl = "press-ing SQUARE";
+					size_t rlen = strlen(repl), olen = strlen("press-ing the \"9\" key");
+					memcpy(p, repl, rlen);
+					memmove(p + rlen, p + olen, strlen(p + olen) + 1);
+				}
+				while ((p = strstr(str, "(key 0)")) != NULL) {
+					memcpy(p, "(START)", 7);
+				}
+				while ((p = strstr(str, "Help/About")) != NULL) {
+					memcpy(p, "Help", 4);
+					memmove(p + 4, p + 10, strlen(p + 10) + 1);
+				}
+			}
+#endif
 			*pos += len;
 			render->numMapStrings++;
 		}

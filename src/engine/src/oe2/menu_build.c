@@ -934,7 +934,17 @@ void Menu_initMenu(Menu *menu, int menuId) {
       addId(menu, 0x42, 8);
     addId(menu, 0x43, 8);
     addId(menu, 0x45, 8);
+#ifdef OE_STANDALONE_BRIDGE
+    {
+      String s;
+      String_ctor(&s);
+      String_appendCStr_76f0(&s, "Help      ");
+      addText(menu, &s, 8);
+      String_dtor(&s, 0);
+    }
+#else
     addId(menu, 0x47, 8);
+#endif
     break;
 
   case 4: { /* help / about */

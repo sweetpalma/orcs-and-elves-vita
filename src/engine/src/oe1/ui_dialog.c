@@ -81,6 +81,34 @@ void Canvas_setupDialog(Canvas *canvas, char *text, int style, int flags)
 	int len, i, start, snd;
 	int boxW = canvas->viewW > 176 ? 176 : canvas->viewW;
 	int dlgCols = (boxW - 0xb) / 7;
+#ifdef OE_STANDALONE_BRIDGE
+	char modBuf[768];
+	if (text != NULL) {
+		char *p;
+		strncpy(modBuf, text, sizeof(modBuf) - 1);
+		modBuf[sizeof(modBuf) - 1] = '\0';
+		while ((p = strstr(modBuf, "press-ing the # key or by go-ing to the 'View Map' menu en-try (key 0)")) != NULL) {
+			const char *repl = "press-ing SELECT or by go-ing to the 'View Map' menu en-try (START)";
+			size_t rlen = strlen(repl), olen = strlen("press-ing the # key or by go-ing to the 'View Map' menu en-try (key 0)");
+			memcpy(p, repl, rlen);
+			memmove(p + rlen, p + olen, strlen(p + olen) + 1);
+		}
+		while ((p = strstr(modBuf, "press-ing the \"9\" key")) != NULL) {
+			const char *repl = "press-ing SQUARE";
+			size_t rlen = strlen(repl), olen = strlen("press-ing the \"9\" key");
+			memcpy(p, repl, rlen);
+			memmove(p + rlen, p + olen, strlen(p + olen) + 1);
+		}
+		while ((p = strstr(modBuf, "(key 0)")) != NULL) {
+			memcpy(p, "(START)", 7);
+		}
+		while ((p = strstr(modBuf, "Help/About")) != NULL) {
+			memcpy(p, "Help", 4);
+			memmove(p + 4, p + 10, strlen(p + 10) + 1);
+		}
+		text = modBuf;
+	}
+#endif
 
 	if (style == 1) {
 		/* the first two lines are indented, the rest uses the full width */
@@ -240,20 +268,36 @@ void Canvas_dequeueHelpDialog(Canvas *canvas, int force)
 		case 0: /* consumables: potions are 0..10 */
 			if (def->parm >= 0 && def->parm < 11) {
 				title = Ui_str(MOD_STR_GOT_POTION);
+#ifdef OE_STANDALONE_BRIDGE
+				help = "To use your new potion, open the menu (START) and select \"Items\" then \"Potions\".";
+#else
 				help = Ui_str(MOD_STR_HELP_POTION);
+#endif
 			} else {
 				title = Ui_str(MOD_STR_GOT_ITEM);
+#ifdef OE_STANDALONE_BRIDGE
+				help = "To use your new item, open the menu (START) and select \"Items\" then \"Other\".";
+#else
 				help = Ui_str(MOD_STR_HELP_ITEM);
+#endif
 			}
 			break;
 		case 1:
 			title = Ui_str(MOD_STR_GOT_WEAPON);
 			if (!(canvas->app->render->mapFlagBits & 2)) /* maps without weapons skip the hint */
+#ifdef OE_STANDALONE_BRIDGE
+				help = "To wield your new weapon, use TRIANGLE to cycle weapons, or open the menu (START) and select \"Items\" then \"Weapons\".";
+#else
 				help = Ui_str(MOD_STR_HELP_WEAPON);
+#endif
 			break;
 		case 2:
 			title = Ui_str(MOD_STR_GOT_RING);
+#ifdef OE_STANDALONE_BRIDGE
+			help = "To wear your new ring, open the menu (START) and select \"Items\" then \"Rings\".";
+#else
 			help = Ui_str(MOD_STR_HELP_RING);
+#endif
 			break;
 		case 7:
 			title = Ui_str(MOD_STR_GOT_ARMOR);

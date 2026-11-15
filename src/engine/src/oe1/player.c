@@ -177,8 +177,14 @@ void Player_levelUp(Player *p)
 	end = levelUpStat(base, CombatEntity_getAccuracy, CombatEntity_setAccuracy, 2, MOD_STR_LEVEL_ACCURACY, end, limit);
 
 	Player_calcStats(p);
-	if (end < limit)
+	if (end < limit) {
+#ifdef OE_STANDALONE_BRIDGE
+		snprintf(end, (size_t)(limit - end), "%s",
+		         "|Health restored.||To check your stats, open the menu (START) and select \"Status\".");
+#else
 		snprintf(end, (size_t)(limit - end), "%s", modStr(MOD_STR_LEVEL_TRAILER));
+#endif
+	}
 	CombatEntity_setHealth(&p->ce, CombatEntity_getMaxHealth(&p->ce));
 
 	if (cv->state != CANVAS_STATE_MENU) {

@@ -76,9 +76,23 @@ int Text_loadStringGroup(Canvas *canvas, int group) {
  * "\%" to '%' and "\n" to a newline. */
 void Text_getString(Canvas *canvas, int group, int idx, String *out) {
 #ifdef OE_STANDALONE_BRIDGE
-  if (group == 3 && idx == 0x47) {
-    String_appendCStr_76f0(out, "Help");
-    return;
+  if (group == 3) {
+    if (idx == 0x47) {
+      String_appendCStr_76f0(out, "Help");
+      return;
+    }
+    if (idx == 0x115) {
+      String_appendCStr_76f0(out, "CROSS = Make Offer   ");
+      return;
+    }
+    if (idx == 0x116) {
+      String_appendCStr_76f0(out, "CIRCLE = Clear/Cancel");
+      return;
+    }
+    if (idx == 0x13f) {
+      String_appendCStr_76f0(out, "CROSS = Send Msg     ");
+      return;
+    }
   }
   if (group == 0) {
     switch (idx) {
@@ -251,7 +265,8 @@ void Text_readStringFromRes(Canvas *canvas, int group, int idx,
           "tumbler. Press the same direction again to finish setting the "
           "tumbler. Continue till all tumblers are set.||"
           "@LOCKED OBJECTS|"
-          "Throughout the game you will find locked treasure chests and doors "
+          "Throughout the game you will find locked treasure chests and "
+          "doors "
           "that can be unlocked with your lock picks, a key, or a lever.");
       return;
     }

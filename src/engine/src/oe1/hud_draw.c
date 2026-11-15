@@ -100,26 +100,31 @@ void Hud_drawControlsHelp(Hud *hud)
 	Canvas *cv = hud->canvas;
 	Image *anchors = &hud->chatAnchors;
 	int bottom = cv->originY + cv->viewH;
+	int cx = cv->viewCenterX;
 	int y;
 
 	Gfx_setColor(hud->app, UI_BLACK);
-	Gfx_fillRect(hud->app, cv->viewCenterX - 0x28, cv->viewCenterY - 0xe, 0x50, 0x1a);
+	Gfx_fillRect(hud->app, cx - 0x28, cv->viewCenterY - 0xe, 0x50, 0x1a);
 	Gfx_setColor(hud->app, UI_WHITE);
-	Gfx_drawRect(hud->app, cv->viewCenterX - 0x28, cv->viewCenterY - 0xe, 0x50, 0x1a);
-	Canvas_drawStringRange(cv, Ui_str(MOD_STR_PRESS_OK), cv->viewCenterX, cv->viewCenterY, 0x12, 0, -1, 0);
-	Canvas_drawStringRange(cv, Ui_str(MOD_STR_TO_CONTINUE), cv->viewCenterX, cv->viewCenterY, 0x10, 0, -1, 0);
+	Gfx_drawRect(hud->app, cx - 0x28, cv->viewCenterY - 0xe, 0x50, 0x1a);
+#ifdef OE_STANDALONE_BRIDGE
+	Canvas_drawStringRange(cv, "Press CROSS", cx, cv->viewCenterY, 0x12, 0, -1, 0);
+#else
+	Canvas_drawStringRange(cv, Ui_str(MOD_STR_PRESS_OK), cx, cv->viewCenterY, 0x12, 0, -1, 0);
+#endif
+	Canvas_drawStringRange(cv, Ui_str(MOD_STR_TO_CONTINUE), cx, cv->viewCenterY, 0x10, 0, -1, 0);
 
 	/* the anchor arrows are drawn black-on-blue through blend 0xe */
 	Render_setBlendColors(hud->render, UI_BLACK, TUTORIAL_BG);
-	Hud_drawLabelBox(hud, Ui_str(MOD_STR_WAND), 0, bottom - 0x46, TUTORIAL_BG, UI_WHITE);
-	Canvas_drawRegion(cv, anchors, 9, 9, 9, 9, 0, 4, bottom - 0x36, 0, 0xe, NULL);
-	Hud_drawLabelBox(hud, Ui_str(MOD_STR_AMMO), 0x30, bottom - 0x34, TUTORIAL_BG, UI_WHITE);
-	Canvas_drawRegion(cv, anchors, 9, 9, 9, 9, 0, 0x45, bottom - 0x24, 0, 0xe, NULL);
-	Hud_drawLabelBox(hud, Ui_str(MOD_STR_ARMOUR), 0x5c, bottom - 0x34, TUTORIAL_BG, UI_WHITE);
-	Canvas_drawRegion(cv, anchors, 9, 9, 9, 9, 0, 0x70, bottom - 0x24, 0, 0xe, NULL);
-	Hud_drawLabelBox(hud, Ui_str(MOD_STR_HEALTH), 100, bottom - 0x4c, TUTORIAL_BG, UI_WHITE);
-	Canvas_drawRegion(cv, anchors, 9, 0, 9, 9, 0, 0x94, bottom - 0x48, 0, 0xe, NULL);
-	Gfx_drawLine(hud->app, 0x9d, bottom - 0x44, 0x9d, bottom - 0x1c);
+	Hud_drawLabelBox(hud, Ui_str(MOD_STR_WAND), cx - 88, bottom - 0x46, TUTORIAL_BG, UI_WHITE);
+	Canvas_drawRegion(cv, anchors, 9, 9, 9, 9, 0, cx - 75, bottom - 0x36, 0, 0xe, NULL);
+	Hud_drawLabelBox(hud, Ui_str(MOD_STR_AMMO), cx - 40, bottom - 0x34, TUTORIAL_BG, UI_WHITE);
+	Canvas_drawRegion(cv, anchors, 9, 9, 9, 9, 0, cx - 19, bottom - 0x24, 0, 0xe, NULL);
+	Hud_drawLabelBox(hud, Ui_str(MOD_STR_ARMOUR), cx + 4, bottom - 0x34, TUTORIAL_BG, UI_WHITE);
+	Canvas_drawRegion(cv, anchors, 9, 9, 9, 9, 0, cx + 24, bottom - 0x24, 0, 0xe, NULL);
+	Hud_drawLabelBox(hud, Ui_str(MOD_STR_HEALTH), cx + 12, bottom - 0x4c, TUTORIAL_BG, UI_WHITE);
+	Canvas_drawRegion(cv, anchors, 9, 0, 9, 9, 0, cx + 60, bottom - 0x48, 0, 0xe, NULL);
+	Gfx_drawLine(hud->app, cx + 69, bottom - 0x44, cx + 69, bottom - 0x1c);
 	Hud_drawLabelBox(hud, Ui_str(MOD_STR_RING), 0x10, hud->topBarH + 0x23, TUTORIAL_BG, UI_WHITE);
 	Canvas_drawRegion(cv, anchors, 0, 0, 9, 9, 0, 0x22, hud->topBarH + 0x24, 2, 0xe, NULL);
 	Gfx_drawLine(hud->app, 0x26, hud->topBarH + 8, 0x26, hud->topBarH + 0x1a);
@@ -129,13 +134,14 @@ void Hud_drawControlsHelp(Hud *hud)
 	Canvas_drawRegion(cv, anchors, 0, 0, 9, 9, 0, 0x49, hud->topBarH + 9, 2, 0xe, NULL);
 	Gfx_drawLine(hud->app, 0x4d, hud->topBarH, 0x4d, 0xf);
 	if (hud->player->numEffects != 0) {
+		int right = cv->originX + cv->viewW;
 		Gfx_setColor(hud->app, TUTORIAL_BG);
-		Gfx_fillRect(hud->app, 0x74, 0x13, 0x36, 0x1c);
+		Gfx_fillRect(hud->app, right - 60, 0x13, 0x36, 0x1c);
 		Gfx_setColor(hud->app, UI_WHITE);
-		Gfx_drawRect(hud->app, 0x74, 0x13, 0x36, 0x1c);
-		Canvas_drawStringRange(cv, Ui_str(MOD_STR_STATUS), 0x76, 0x15, 0, 0, -1, 0);
-		Canvas_drawStringRange(cv, Ui_str(MOD_STR_EFFECTS), 0x76, 0x22, 0, 0, -1, 0);
-		Canvas_drawRegion(cv, anchors, 9, 9, 9, 9, 0, 0x8c, 0x2f, 0, 0xe, NULL);
+		Gfx_drawRect(hud->app, right - 60, 0x13, 0x36, 0x1c);
+		Canvas_drawStringRange(cv, Ui_str(MOD_STR_STATUS), right - 58, 0x15, 0, 0, -1, 0);
+		Canvas_drawStringRange(cv, Ui_str(MOD_STR_EFFECTS), right - 58, 0x22, 0, 0, -1, 0);
+		Canvas_drawRegion(cv, anchors, 9, 9, 9, 9, 0, right - 36, 0x2f, 0, 0xe, NULL);
 	}
 }
 
