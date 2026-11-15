@@ -262,7 +262,7 @@ done:
 }
 
 void Plat_present(const uint16_t *fb, int pitchPixels) {
-  if (!tex || !rgbaFrame || virtClock)
+  if (!tex || !rgbaFrame || virtClock || OE2_shouldSkipPresent())
     return;
   OE2_presentFrame(fb, pitchPixels, scrW, scrH, rgbaFrame);
   SDL_UpdateTexture(tex, NULL, rgbaFrame, scrW * (int)sizeof(uint32_t));

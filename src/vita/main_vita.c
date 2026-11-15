@@ -162,10 +162,19 @@ int main(int argc, char **argv) {
     uint32_t now = Plat_uptimeMs();
     if ((int32_t)(now - nextTick) >= 0) {
       uint32_t step = (uint32_t)OE2_getTickMs();
-      nextTick += step;
-      if ((int32_t)(now - nextTick) >= 0)
-        nextTick = now + step;
-      Applet_Tick(app);
+      int budget = 4;
+      while ((int32_t)(now - nextTick) >= 0 && budget-- > 0) {
+        nextTick += step;
+        int moreDue = ((int32_t)(now - nextTick) >= 0 && budget > 0);
+        OE2_setSkipPresent(moreDue);
+        Applet_Tick(app);
+        if (Brew_quitRequested())
+          break;
+      }
+      OE2_setSkipPresent(0);
+      uint32_t after = Plat_uptimeMs();
+      if ((int32_t)(after - nextTick) > (int32_t)(step * 4u))
+        nextTick = after;
     } else {
       Plat_delay(1);
     }

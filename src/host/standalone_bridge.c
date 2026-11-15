@@ -14,7 +14,8 @@
 static int remasteredMode = 1;
 static const int rangeSteps = 20; /* Max lighting reach (20 tiles / 1280 units) */
 static int hostConfigLoaded = 0;
-static int fastTickMode = 1; /* 1 = Fast (16 ms), 0 = Slow (40 ms) */
+static int fastTickMode = 1; /* 1 = Fast (8 ms OE1 / 16 ms OE2), 0 = Slow (15 ms OE1 / 40 ms OE2) */
+static int skipPresent = 0;
 static uint32_t worldPixels[640 * 640];
 static uint32_t litPixels[640 * 640];
 static uint16_t lit565[640 * 640];
@@ -41,10 +42,8 @@ static void ensure_lut565(void) {
 static inline uint32_t to_rgba(uint16_t c) { return lut565ToRgba[c]; }
 
 static inline uint16_t to_rgb565(uint32_t rgba) {
-  uint32_t r = ((rgba & 0xffu) * 249u + 1014u) >> 11;
-  uint32_t g = (((rgba >> 8) & 0xffu) * 253u + 505u) >> 10;
-  uint32_t b = (((rgba >> 16) & 0xffu) * 249u + 1014u) >> 11;
-  return (uint16_t)((r << 11) | (g << 5) | b);
+  return (uint16_t)(((rgba & 0xf8u) << 8) | ((rgba & 0xfc00u) >> 5) |
+                    ((rgba & 0xf80000u) >> 19));
 }
 
 #ifdef OE2_NO_SPRITE_SHADOWS
@@ -139,6 +138,8 @@ void OE2_projectileImpact(const GameSprite *missile, int flaming) {
 }
 
 void OE2_captureWorld(const int16_t *rect) {
+  if (skipPresent)
+    return;
   IBitmap *b = Brew_screen();
   int x = rect[0], y = rect[1], w = rect[2], h = rect[3];
   if (!b || x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > b->width ||
@@ -292,7 +293,20 @@ int OE2_toggleFastTick(void) {
 
 int OE2_getTickMs(void) {
   ensure_host_config();
+#if defined(GAME_OE1)
+  return fastTickMode ? 8 : 15;
+#else
   return fastTickMode ? 16 : 40;
+#endif
+}
+
+void OE2_setSkipPresent(int skip) {
+  skipPresent = skip ? 1 : 0;
+  BrewLight_setSkip(skipPresent);
+}
+
+int OE2_shouldSkipPresent(void) {
+  return skipPresent;
 }
 
 /* Minimal 4x5 uppercase glyph table for the mode toggle toast. */

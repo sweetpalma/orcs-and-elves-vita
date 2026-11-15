@@ -2,6 +2,7 @@
 #define BREW_LIGHTING_H
 #include "game.h"
 void BrewLight_begin(Render *r);
+void BrewLight_setSkip(int skip);
 void BrewLight_setRange(int steps);
 void BrewLight_fade(int level);
 int BrewLight_nativeTarget(void);

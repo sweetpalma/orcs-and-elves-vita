@@ -2,8 +2,6 @@
 
 This document details the architecture, mathematics, light selection algorithms, geometric ray-tracing, ambient occlusion, sprite lighting models, and performance optimizations implemented in `src/host/lighting.c`.
 
----
-
 ## 1. System Overview
 
 The dynamic lighting engine is a screen-space / world-space hybrid. Rather than modifying the fixed-point software rasterizer, the rasterizer logs geometric metadata during span and column passes into a `Surface` buffer. The lighting system then performs ray-traced geometric shading, dynamic light evaluation, and tone mapping directly onto the output pixels.
@@ -33,8 +31,6 @@ Rasterizer Passes (render.c, render_span.c, render_sprite.c)
                          Lit Framebuffer [W × H]
 ```
 
----
-
 ## 2. Surface Buffer & Receiver Geometry
 
 Each pixel on screen stores geometric metadata in a `Surface` structure:
@@ -56,8 +52,6 @@ typedef struct {
 - **`4`**: Player Weapon overlay (illuminated in weapon space, ignores world distance fog).
 - **`5`**: Special floor/ceiling variants.
 
----
-
 ## 3. Light Source Selection & Prioritization
 
 ### 3.1. Emitter Registration (`sources[]`)
@@ -75,22 +69,32 @@ typedef struct {
 } Source;
 ```
 
-#### Key Emitter IDs:
+#### Emitter Tables by Game Edition:
 
-- **Torches & Wall Sconces:** Tile `116`, `130`, `136`, `143`, `145`, `149`, `150`, `181`, `234`.
-- **Healing Crystals:** Tile `162`, `165` (`r=0.15, g=0.45, b=1.0`, cyan glow).
-- **Fire Portal Braziers & Barriers:** Tile `138`, `145` (braziers), `161` (fire barrier).
-- **Dragon / Boss (Gaya):** Tile `20` (body) and `191` (head/flame) in OE1; Tile `185` in OE2.
+- **Orcs & Elves (`GAME_OE1`):**
+  - **Wall Torches & Sconces:** Tile `116` (r=1.0, g=0.42, b=0.10, radius 230), `136` (Torchiere, radius 240), `181` (Wall sconce, radius 150), `185` (Fire sconce, radius 180).
+  - **Fires & Braziers:** Tile `130` (Fire, radius 240), `145` (Fire Portal, r=0.65, g=0.25, b=1.0, radius 200).
+  - **Healing Crystals (Gaya's Hub / Caverns):** Tile `165` (r=0.15, g=0.45, b=1.0, radius 450, power 1.4).
+  - **Elemental Flames & Gems:** Tiles `220..223` (colored gems/crystals), `224`/`225` (blue/cyan magic flame), `227` (torch glow), `230` (fire column), `235` (purple fire), `238` (brazier flame), `242..245` (tinted glows), `252` (portal gate glow).
+
+- **Orcs & Elves II (`OE2`):**
+  - **Wall Sconces & Torches:** Tile `116`, `136`, `143` (Campaign torch, radius 210), `145`, `149`, `150` (Wall sconce, radius 210), `181` (Wall sconce, radius 150), `234`.
+  - **Fires & Barriers:** Tile `130` (Fire, radius 240), `138` (Fire Portal Brazier, radius 240), `161` (Flame barrier, radius 220).
+  - **Crystals & Gems:** Tile `14..16` (colored gems), `162`/`165` (Healing crystals), `224..238` (magic fire variants).
 
 #### Player & Held Weapon Lights:
 
 - **Inherent Player Ambient Light:** Always active at low intensity (`radius = 105 * 1.2`, `power = 0.28`, `r=1.0, g=0.62, b=0.28`).
-- **Fire Crossbow (`w == 5`), Diamond / Kinetic Crossbow (`w == 6`), Flaming Sword (`w == 7`):** Full 100% firelight (`radius = 210 * 1.2`, `power = 1.15`, `r=1.0, g=0.38, b=0.08`).
-- **Wand Orbs (`w == 8..10`):** Tuned to 75% intensity (`radius = 210 * 1.2`, `power = 0.86`).
-  - Shrink Orb (`w == 8`): Red light (`r=1.0, g=0.18, b=0.10`).
-  - Mold Orb (`w == 9`): Green light (`r=0.25, g=1.0, b=0.35`).
-  - Freeze Orb (`w == 10`): Ice blue light (`r=0.35, g=0.65, b=1.0`).
-- **Emissive Weapon Sprite Self-Illumination:** Light-emitting held weapons (`w in {0, 5, 6, 7, 8, 9, 10}`) receive a 1.4x brightness scaling with a minimum floor of 1.25 to prevent dark silhouettes.
+- **Orcs & Elves (`oe1`) Weapons:**
+  - `w == 3` (Vorpal/Flaming Sword), `w == 5` (Heavy Crossbow), `w == 7` (Phoenix Eggs): full firelight (`radius = 210`, `power = 1.15`, `r=1.0, g=0.38, b=0.08`).
+  - Emissive weapons (`w in {0, 3, 7}`) receive a 1.4x self-illumination boost with a 1.25 minimum brightness floor.
+- **Orcs & Elves II (`oe2`) Weapons:**
+  - `w == 5` (Fire Crossbow), `w == 6` (Kinetic Crossbow), `w == 7` (Flaming Sword): full firelight (`radius = 210 * 1.2`, `power = 1.15`, `r=1.0, g=0.38, b=0.08`).
+  - Wand Orbs (`w in {8..10}`): 75% intensity (`radius = 210 * 1.2`, `power = 0.86`):
+    - Shrink Orb (`w == 8`): Red light (`r=1.0, g=0.18, b=0.10`).
+    - Mold Orb (`w == 9`): Green light (`r=0.25, g=1.0, b=0.35`).
+    - Freeze Orb (`w == 10`): Ice blue light (`r=0.35, g=0.65, b=1.0`).
+  - Emissive weapons (`w in {0, 5, 6, 7, 8, 9, 10}`) receive a 1.4x self-illumination boost with a 1.25 minimum brightness floor.
 
 ### 3.2. View-Frustum Scoring (`selectionScore`)
 
@@ -122,8 +126,6 @@ static float selectionScore(int key, float lx, float ly, float distanceSquared) 
 }
 ```
 
----
-
 ## 4. Ray-Traced Geometric Shadows
 
 Shadows are computed via geometric line intersection against the BSP world lines (`Render.lines`):
@@ -134,10 +136,8 @@ Shadows are computed via geometric line intersection against the BSP world lines
   float x = (sx + s->nx / 127.f * 2.f) / 16.f;
   float y = (sy + s->ny / 127.f * 2.f) / 16.f;
   ```
-- **Performance Optimization (`OE2_NO_SPRITE_SHADOWS`):**
-  On PS Vita and PC, `OE2_NO_SPRITE_SHADOWS` is enabled. Sprites do not cast volumetric shadows onto the shadow grid, removing expensive per-frame sprite occluder rebuilds while preserving 100% of wall, column, and door shadows.
-
----
+- **Performance Optimization (`OE_NO_SPRITE_SHADOWS`):**
+  On PS Vita and PC, `OE_NO_SPRITE_SHADOWS` is enabled. Sprites do not cast volumetric shadows onto the shadow grid, removing expensive per-frame sprite occluder rebuilds while preserving 100% of wall, column, and door shadows.
 
 ## 5. Shading Models & Critical Pitfalls
 
@@ -186,8 +186,6 @@ Shadows are computed via geometric line intersection against the BSP world lines
   if (kind != 4 && kind != 3 && fadeLevel > 0) { ... }
   ```
 
----
-
 ## 6. Color Space & Tone Mapping
 
 Lighting values are evaluated in linear radiometric units and mapped to display gamma through precomputed lookup tables:
@@ -202,10 +200,30 @@ Lighting values are evaluated in linear radiometric units and mapped to display 
   ```
   Prevents blown-out color banding when multiple lights overlap while preserving bright specular highlights.
 
----
-
-## 7. PS Vita Performance Optimizations
+## 7. Performance Optimizations (PS Vita & PC)
 
 1. **Multi-threaded Slicing:** Column spans are sliced across a 4-thread worker pool (`LightWorkerCtx`).
-2. **Q10 Fixed-Point Interpolation:** `samplePointQ10` processes low-resolution irradiance grids and bilinearly interpolates across wall spans in integer arithmetic.
+2. **Q10 Fixed-Point Interpolation:** `samplePointQ10` processes low-resolution irradiance grids and bilinearly interpolates across wall spans using integer arithmetic.
 3. **Atomic Cache Flags:** `wallCheckedAtomic` avoids redundant ray-casts across thread boundaries using lock-free acquire/release semantics.
+4. **Frame Skip & Lighting Bypass (`BrewLight_setSkip`):** When presentation is locked or no world simulation/camera change occurs, full-frame lighting recalculations and framebuffer reconstruction are bypassed.
+5. **Normal-Offset Coordinate Precalculation (`ShadowSampleCoord`):** The 2-unit normal offset (`initShadowCoord`) is computed once per surface/column rather than re-evaluating normal geometry inside inner line-occlusion ray loops.
+6. **Integer Span Stepping:** Span rendering caches `cachedSpanZBase16` and `cachedSpanDz16` (16.16 fixed-point) to eliminate per-pixel floating-point divisions during raster span traversal.
+7. **Precalculated Falloff & Attenuation Tables:**
+   - Active world lights precalculate `lightRadius2[8]`, `lightEffR2[8]`, `lightInvRadius[8]`, and `lightGain[8]` once per frame, turning inner falloff calculations into simple multiply-adds.
+   - `FLOOR_SHADOW_SLOTS` (16) and `ROOM_DIST_SLOTS` (16) cached lookup tables accelerate floor shadow tests.
+8. **Discontinuity-Aware Bilateral Surface Compatibility (`compatibleSurfaceMax`):** Preserves geometric, depth, and normal edges during coarse irradiance grid reconstruction, preventing light bleeding across corners and wall silhouettes.
+
+## 8. Multi-Game Considerations & Known Visual Trade-offs
+
+### 8.1. High Emitter Density in Gaya's Hub (OE1 Map 9)
+
+In Orcs & Elves I (`Map 9: Dragon's Lair` / Gaya's hub), the map contains an exceptionally high concentration of dynamic light emitters:
+- **10 Healing Crystals** (Tile `165`, radius `450`, power `1.4`).
+- **8 Fire Portals** (Tile `145`, radius `200`, power `1.6`).
+- **8 Torchieres** (Tile `136`, radius `240`, power `2.0`).
+- **Gaya Dragon Body & Head** (Tiles `20` and `191`).
+
+Because the lighting engine caps active world lights to **7 slots** per frame for real-time performance on the PS Vita:
+- **Rear-Camera Directional Culling:** When the player stands near the central crystal cluster facing Gaya, the crystals fall behind the camera (`forward < 0`). Under `selectionScore`, lights behind the camera receive up to a 10x penalty (`dirWeight = 1.0 + 4.0 * (-forward / 128.0)`).
+- **Result:** The crystals behind the player are culled in favor of forward lights (Gaya's flame, portal braziers, and wall torchieres in front). As a result, the ambient blue illumination cast by the crystals onto forward walls can noticeably drop out when turning away from them.
+- **Tuning Consideration:** To reduce GPU/CPU load in the hub while mitigating popping, the crystal radius and intensity can be dampened or clustered into a unified central emitter.

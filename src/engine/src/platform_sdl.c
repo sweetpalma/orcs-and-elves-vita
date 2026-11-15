@@ -122,6 +122,8 @@ void Plat_present(const uint16_t *fb, int pitchPixels) {
                             upload/present keeps them fast */
     return;
 #ifdef OE2_STANDALONE_BRIDGE
+  if (OE2_shouldSkipPresent())
+    return;
   OE2_presentFrame(fb, pitchPixels, scrW, scrH, rgbaFrame);
   SDL_UpdateTexture(tex, NULL, rgbaFrame, scrW * (int)sizeof(uint32_t));
 #else

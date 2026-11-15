@@ -11,6 +11,8 @@ void OE2_saveHostConfig(void);
 int OE2_isFastTick(void);
 int OE2_toggleFastTick(void);
 int OE2_getTickMs(void);
+void OE2_setSkipPresent(int skip);
+int OE2_shouldSkipPresent(void);
 void OE2_presentFrame(const uint16_t *fb, int pitchPixels, int scrW, int scrH, uint32_t *outRgba);
 
 #endif

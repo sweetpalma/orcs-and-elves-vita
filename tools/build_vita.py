@@ -196,7 +196,11 @@ def build_vita_game(game: str, bundle_data: bool = False):
         if stub not in libs:
             libs.append(stub)
 
-    subprocess.run([str(gcc), "-Wl,-q", *map(str, objects), *libs, "-o", str(elf_path)], check=True)
+    # Reserve headroom after segment 0 so vita-elf-create never collides with segment 1.
+    gap_ld = build_dir / "vita_sce_gap.ld"
+    gap_ld.write_text("SECTIONS { . = ALIGN(0x1000) + 0x4000; } INSERT BEFORE .init_array;\n")
+
+    subprocess.run([str(gcc), "-Wl,-q", f"-Wl,-T,{gap_ld}", *map(str, objects), *libs, "-o", str(elf_path)], check=True)
     subprocess.run([str(elf_create), str(elf_path), str(velf_path)], check=True)
     subprocess.run([str(make_fself), "-s", str(velf_path), str(eboot_path)], check=True)
     subprocess.run(
