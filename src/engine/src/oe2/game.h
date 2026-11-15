@@ -18,7 +18,7 @@
  * one global applet instead. */
 extern Applet *g_app;
 
-#ifdef OE2_CINEMATIC_CAPTURE
+#ifdef OE_CINEMATIC_CAPTURE
 /* Offline camera precision; absent from normal native/browser builds. */
 void Film_adjustView(Render *render);
 void Film_offsetFloor(int *x, int *y);
@@ -27,10 +27,10 @@ float Film_offsetY(void);
 #endif
 
 /* Presentation-only arrival flash; never changes combat or sprite lifetime. */
-void OE2_projectileImpact(const GameSprite *missile, int flaming);
+void OE_projectileImpact(const GameSprite *missile, int flaming);
 /* Host presentation hook: reads the finished world before the original HUD. */
-void OE2_captureWorld(const int16_t *rect);
-void OE2_captureRenderedWorld(Render *render);
+void OE_captureWorld(const int16_t *rect);
+void OE_captureRenderedWorld(Render *render);
 void BrewLight_begin(Render *r);
 void BrewView_begin(Render *r);
 void BrewView_line(Render *r, const Line *line);
@@ -51,7 +51,7 @@ Applet *App_create(int screenW, int screenH);
 void App_destroy(Applet *app);
 
 /* Report something the port does not handle yet, once per call site. */
-#define OE2_UNIMPLEMENTED(what)                                                \
+#define OE_UNIMPLEMENTED(what)                                                \
   do {                                                                         \
     static int once_;                                                          \
     if (!once_) {                                                              \

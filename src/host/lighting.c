@@ -8,10 +8,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
 #include <stdatomic.h>
 #ifdef __vita__
-#define OE2_LIGHT_MT 1
+#define OE_LIGHT_MT 1
 #include <psp2/kernel/cpu.h>
 #include <psp2/kernel/threadmgr.h>
 #define LIGHT_THREADS 3
@@ -19,7 +19,7 @@
 #define LIGHT_THREADS 1
 #endif
 #endif
-#ifdef OE2_QA_INTERACTIONS
+#ifdef OE_QA_INTERACTIONS
 #include <emscripten.h>
 static double profile[8];
 static int costMode;
@@ -32,7 +32,7 @@ double BrewLight_qaProfile(int field) {
 #define GRID_CELLS (128 * 128 * 24)
 #define HIDDEN 0x40000u
 #define NO_DEPTH 0x200000u
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
 /* Compact 8-byte Surface so 352x166 (~467 KB) fits inside PS Vita's 512 KB L2
  * cache. x, y and z (bits 3..15 of zKind) are Q2 signed fixed-point (1/4 world
  * unit). rawKind (bits 0..2 of zKind): 0=none, 1=floor (nz=+127), 2=wall,
@@ -217,7 +217,7 @@ static uint8_t wallSampleReady[8][(GRID_CELLS + 7) / 8];
 #define MAX_DIRTY_WALL_BYTES 8192
 static int dirtyCheckedCells[MAX_DIRTY_CELLS], numDirtyChecked;
 static int dirtyWallBytes[8][MAX_DIRTY_WALL_BYTES], numDirtyWall[8];
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
 static int lightWallSlot[8];
 static uint32_t shadowFrameGen = 1;
 static _Atomic uint16_t wallVisState[GRID_CELLS];
@@ -239,10 +239,10 @@ static size_t weaponCapacity;
 static int weaponCopied, weaponBottomY = -1;
 /* A small, geometry-only distance field supplies smooth floor contact shade. */
 static float wallDistance[3][129 * 129], wallAxisDistance[3][2][129 * 129];
-#ifndef OE2_NO_SPRITE_SHADOWS
+#ifndef OE_NO_SPRITE_SHADOWS
 static unsigned char wallChecked[3][129 * 129];
 #endif
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
 typedef struct {
   int16_t x, y;
   float distance;
@@ -376,7 +376,7 @@ void BrewLight_begin(Render *r) {
     return;
   }
   memset(surfaces, 0, (size_t)width * height * sizeof(Surface));
-#ifndef OE2_NO_SPRITE_SHADOWS
+#ifndef OE_NO_SPRITE_SHADOWS
   int nSprites =
       r->numSprites < 0 ? 0 : (r->numSprites > 800 ? 800 : r->numSprites);
   if (r == g_app->render) {
@@ -414,7 +414,7 @@ void BrewLight_floor(Render *r, int x, int y, int u, int v, int du, int dv,
                      int count, int ceiling) {
   if (r != renderer || y < 0 || y >= height || count <= 0)
     return;
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
   if (width > 400 || height > 240)
 #endif
     if (y < 880) {
@@ -435,7 +435,7 @@ void BrewLight_floor(Render *r, int x, int y, int u, int v, int du, int dv,
   uint32_t vv = (uint32_t)v + (uint32_t)dv * (uint32_t)i0;
   Surface *dst = &surfaces[y * width + x + i0];
   int n = i1 - i0;
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
   int iz = (ceiling ? RENDER_CEIL(r) : RENDER_FLOOR(r)) * 4;
   if (iz < -4096)
     iz = -4096;
@@ -496,7 +496,7 @@ void BrewLight_span(Render *r, int x, int y, int count, int projection,
   int projWorld = sprite ? r->projH : r->projW;
 #endif
   float invFocalW = cachedInvFocalW;
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
   int16_t qx, qy;
   int32_t zBase16, dz16;
 #else
@@ -506,7 +506,7 @@ void BrewLight_span(Render *r, int x, int y, int count, int projection,
   signed char snx, sny;
   if (cachedSpanActive && cachedSpanX == x && cachedSpanProj == projection &&
       cachedSpanSprite == sprite && cachedSpanLine == lineId) {
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
     qx = cachedSpanQx;
     qy = cachedSpanQy;
     zBase16 = cachedSpanZBase16;
@@ -551,7 +551,7 @@ void BrewLight_span(Render *r, int x, int y, int count, int projection,
     sny = (signed char)(ny * 127);
     float scale = t * invFocalW;
     float spanDz = -2.f * scale;
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
     qx = clampQ2(fastRoundf(spanPx * 4.f));
     qy = clampQ2(fastRoundf(spanPy * 4.f));
     zBase16 = fastRoundf((r->viewZ + (height - 1.f) * scale) * 65536.f);
@@ -582,7 +582,7 @@ void BrewLight_span(Render *r, int x, int y, int count, int projection,
   int i0 = y < 0 ? -y : 0, i1 = (y + count > height) ? (height - y) : count;
   if (i0 >= i1)
     return;
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
   int32_t zz = zBase16 + (y + i0) * dz16;
   int iz0 = zz >> 14, iz1 = (zz + dz16 * (i1 - i0 - 1)) >> 14;
   Surface *s = &surfaces[(y + i0) * width + x];
@@ -677,7 +677,7 @@ void BrewLight_weapon(Render *r, int x, int y, int count, int blend) {
     weaponBottomY = y + i1 - 1;
 }
 void BrewLight_tagCaster(Render *r, Sprite *s) {
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
   (void)r;
   (void)s;
 #else
@@ -686,7 +686,7 @@ void BrewLight_tagCaster(Render *r, Sprite *s) {
 }
 void BrewLight_poseCaster(Render *r, int x, int y, int z, int tile, int frame,
                           int flags, int mode, int scale) {
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
   (void)r;
   (void)x;
   (void)y;
@@ -712,7 +712,7 @@ void BrewLight_poseCaster(Render *r, int x, int y, int z, int tile, int frame,
     nativePoses[casterTag] = posedCasters[casterTag];
 #endif
 }
-#if !defined(GAME_OE1) && !defined(OE2_NO_SPRITE_SHADOWS)
+#if !defined(GAME_OE1) && !defined(OE_NO_SPRITE_SHADOWS)
 static int casterEligible(const Sprite *s) {
   initSourceTables();
   int tile = s->info & 255;
@@ -950,7 +950,7 @@ int BrewLight_visible(const Render *r, float ax, float ay, float az, float bx,
   }
   return visibleReference(r, ax, ay, az, bx, by, bz);
 }
-#ifdef OE2_QA_INTERACTIONS
+#ifdef OE_QA_INTERACTIONS
 int BrewLight_qaTraceCheck(void) {
   Render *copy = malloc(sizeof(Render));
   if (!copy)
@@ -1055,7 +1055,7 @@ static float selectionScore(int key, float lx, float ly,
       return score * .75f;
   return score;
 }
-#ifdef OE2_QA_INTERACTIONS
+#ifdef OE_QA_INTERACTIONS
 int BrewLight_qaRadiusCheck(void) {
   int saved = processingSteps, valid = 1;
   const int levels[] = {5, 15, 20};
@@ -1083,11 +1083,11 @@ int BrewLight_qaSelectedKey(int index) {
 static void candidate(Light value, float cx, float cy) {
   value.radius *= LIGHT_REFERENCE_SCALE;
   float d = (value.x - cx) * (value.x - cx) + (value.y - cy) * (value.y - cy);
-#ifdef OE2_QA_INTERACTIONS
+#ifdef OE_QA_INTERACTIONS
   profile[5]++;
 #endif
   if (!lightInRegion(d, value.radius)) {
-#ifdef OE2_QA_INTERACTIONS
+#ifdef OE_QA_INTERACTIONS
     profile[6]++;
 #endif
     return;
@@ -1205,7 +1205,7 @@ static void spriteWallCandle(Render *r, const Sprite *s, int key) {
   }
   wallCandles(r, &l, key, s->z - 32.f);
 }
-#ifdef OE2_QA_INTERACTIONS
+#ifdef OE_QA_INTERACTIONS
 static int wallCandlesEnabled = 1;
 void BrewLight_qaWallCandles(int enabled) { wallCandlesEnabled = enabled != 0; }
 int BrewLight_qaCandleGeometry(void) {
@@ -1257,7 +1257,7 @@ int BrewLight_qaCandleGeometry(void) {
   return ok;
 }
 #endif
-#ifdef OE2_QA_INTERACTIONS
+#ifdef OE_QA_INTERACTIONS
 int BrewLight_qaSourcePoint(int index, int field) {
   Render *r = g_app->render;
   for (int i = 0; i < r->numMapSprites; i++) {
@@ -1282,7 +1282,7 @@ int BrewLight_qaSourcePoint(int index, int field) {
   return -1;
 }
 #endif
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
 #define FLOOR_SHADOW_SLOTS 16
 #define ROOM_DIST_SLOTS 16
 typedef struct {
@@ -1322,7 +1322,7 @@ typedef struct {
 static RoomDistCache roomDistCache;
 #endif
 static void gather(Render *r) {
-#ifdef OE2_QA_INTERACTIONS
+#ifdef OE_QA_INTERACTIONS
   profile[5] = profile[6] = 0;
 #endif
   Canvas *view = g_app->canvas;
@@ -1433,7 +1433,7 @@ static void gather(Render *r) {
                clusters[c].minKey};
     candidate(l, processingX, processingY);
   }
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
   if (staticCacheMap != view->mapId || staticCacheLines != r->numLines ||
       staticCacheMapSprites != r->numMapSprites ||
       staticCacheFlats != r->numFlats || staticCacheRender != r) {
@@ -1514,7 +1514,7 @@ static void gather(Render *r) {
     candidate(l, processingX, processingY);
   }
 #else
-#ifdef OE2_QA_INTERACTIONS
+#ifdef OE_QA_INTERACTIONS
   if (wallCandlesEnabled)
 #endif
   {
@@ -1643,7 +1643,7 @@ static void gather(Render *r) {
   h = hashWord(h, (uint32_t)r->ceilHeight);
   if (h != geometryHash) {
     geometryHash = h;
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
     memset((void *)wallCheckedAtomic, 0, sizeof(wallCheckedAtomic));
     memset(wallLightHash, 0, sizeof(wallLightHash));
 #else
@@ -1652,7 +1652,7 @@ static void gather(Render *r) {
 #endif
     buildTraceGrid(r);
   }
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
   uint32_t targetWallHash[8] = {0};
   unsigned char slotUsed[8] = {0};
   for (int j = 0; j < numLights; j++) {
@@ -1728,7 +1728,7 @@ static void gather(Render *r) {
   cachedHash = h;
 #else
   for (int j = 0; j < numLights; j++) {
-#ifndef OE2_QA_INTERACTIONS
+#ifndef OE_QA_INTERACTIONS
     if (lights[j].key == 2000) {
       casterCount[j] = 0;
       continue;
@@ -1760,7 +1760,7 @@ static void gather(Render *r) {
   unsigned invalidMask = 0;
   for (int j = 0; j < numLights; j++) {
     casterCount[j] = 0;
-#ifndef OE2_QA_INTERACTIONS
+#ifndef OE_QA_INTERACTIONS
     if (lights[j].key == 2000)
       continue;
 #endif
@@ -1829,7 +1829,7 @@ static void gather(Render *r) {
 #endif
 }
 static float visibilityAt(int ix, int iy, int iz, int light, int sprites) {
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
   (void)sprites;
   const Light *l = &lights[light];
   if (ix < 0 || ix >= 128 || iy < 0 || iy >= 128 || iz < 0 || iz >= 24)
@@ -1870,7 +1870,7 @@ static float visibilityAt(int ix, int iy, int iz, int light, int sprites) {
     unsigned shift = light * 3, mask = (wallSamples[cell] >> shift) & 7u,
              readyBit = 1u << (cell & 7);
     int byteIdx = cell >> 3;
-#ifdef OE2_QA_INTERACTIONS
+#ifdef OE_QA_INTERACTIONS
     if (!(wallSampleReady[light][byteIdx] & readyBit)) {
       mask = 0;
       for (int sample = -1; sample <= 1; sample++)
@@ -1943,7 +1943,7 @@ static float visibilityAt(int ix, int iy, int iz, int light, int sprites) {
 #endif
 }
 static float mixf(float a, float b, float t) { return a + (b - a) * t; }
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
 typedef struct {
   uint32_t validGen;
   int axis, fixed, u, v, sprites;
@@ -1993,7 +1993,7 @@ static inline void initShadowCoord(const Surface *s, float sx, float sy,
 }
 static float shadowCoordCtx(const ShadowSampleCoord *sc, int light, int column,
                             LightWorkerCtx *ctx) {
-#ifdef OE2_QA_INTERACTIONS
+#ifdef OE_QA_INTERACTIONS
   if (costMode == 1)
     return 1;
 #endif
@@ -2046,7 +2046,7 @@ static float wallDistanceAt(int x, int y, int axis, int layer) {
   if (x < 0 || y < 0 || x > 128 || y > 128)
     return 40;
   int cell = y * 129 + x;
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
   if (atomic_load_explicit(&wallCheckedAtomic[layer][cell],
                            memory_order_acquire) != 2u) {
 #else
@@ -2114,7 +2114,7 @@ static float wallDistanceAt(int x, int y, int axis, int layer) {
           best[normal] = d;
       }
     }
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
     float d0 = sqrtf(best[0]), d1 = sqrtf(best[1]), dMin = fminf(d0, d1);
     uint8_t exp = 0;
     if (atomic_compare_exchange_strong_explicit(&wallCheckedAtomic[layer][cell],
@@ -2138,7 +2138,7 @@ static float wallDistanceAt(int x, int y, int axis, int layer) {
   return axis < 0 ? wallDistance[layer][cell]
                   : wallAxisDistance[layer][axis][cell];
 }
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
 static float roomDistanceCtx(const Surface *s, int axis, LightWorkerCtx *ctx) {
   float x = surfX(s) * (1.f / 16.f), y = surfY(s) * (1.f / 16.f);
   int ix = fastFloorf(x), iy = fastFloorf(y), snz = surfNz(s);
@@ -2184,7 +2184,7 @@ static float roomDistance(const Surface *s, int axis) {
 }
 static float contactShade(const Surface *s, int column) {
 #endif
-#ifdef OE2_QA_INTERACTIONS
+#ifdef OE_QA_INTERACTIONS
   if (costMode == 2)
     return 1;
 #endif
@@ -2192,7 +2192,7 @@ static float contactShade(const Surface *s, int column) {
   if (kind == 4 || kind == 3)
     return 1.f;
   float distance;
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
   if (surfNz(s))
     distance = roomDistanceCtx(s, -1, ctx);
 #else
@@ -2211,7 +2211,7 @@ static float contactShade(const Surface *s, int column) {
        */
       if (column >= 0) {
         CornerCache *c = &cornerCache[column];
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
         if (c->validGen != shadowFrameGen || c->x != s->x || c->y != s->y ||
             c->axis != axis) {
           c->x = s->x;
@@ -2230,7 +2230,7 @@ static float contactShade(const Surface *s, int column) {
         }
 #endif
         corner = c->distance;
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
       } else
         corner = roomDistanceCtx(s, axis, ctx);
 #else
@@ -2244,14 +2244,14 @@ static float contactShade(const Surface *s, int column) {
   t = t * t * (3 - 2 * t);
   return .35f + .65f * t;
 }
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
 static inline float contactShade(const Surface *s, int column) {
   return contactShadeCtx(s, column, &lightWorkerCtx[0]);
 }
 #endif
-#ifdef OE2_LIGHTING_TEST
+#ifdef OE_LIGHTING_TEST
 int BrewLight_testContact(Render *r) {
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
   Render *saved = renderer;
   renderer = r;
   if (++shadowFrameGen == 0) {
@@ -2280,7 +2280,7 @@ int BrewLight_testContact(Render *r) {
               contactShade(&far, -1) > .99f;
   valid = valid && contactShade(&wall, -1) < .36f &&
           contactShade(&middle, -1) > .99f && contactShade(&corner, -1) < .36f;
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
   r->numLines = 1;
   r->lines[0].flags = 0x40000000u;
   r->ceilHeight = r->effCeil = 128;
@@ -2364,7 +2364,7 @@ static void glow(const Light *l, float flicker) {
 }
 static int weaponEnergyValid;
 static float weaponEnergy[3];
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
 static void incidentEnergyCtx(const Surface *s, const float *flicker,
                               int column, float *energy, LightWorkerCtx *ctx) {
   float ao = contactShadeCtx(s, column, ctx);
@@ -2397,7 +2397,7 @@ static void incidentEnergyCtx(const Surface *s, const float *flicker,
     float e = maxE * (.18f + .82f * lambert);
     if (e < 0.008f)
       continue;
-#ifdef OE2_QA_INTERACTIONS
+#ifdef OE_QA_INTERACTIONS
     if (kind != 4) {
       if (!sc.init)
         initShadowCoord(s, sx, sy, sz, snz, &sc);
@@ -2464,7 +2464,7 @@ static void incidentEnergy(const Surface *s, const float *flicker, int column,
     float attenuation = 1 - d / l->radius;
     float e = weight * attenuation * attenuation * l->power * flicker[j] *
               2.1f * (.18f + .82f * lambert);
-#ifdef OE2_QA_INTERACTIONS
+#ifdef OE_QA_INTERACTIONS
     if (kind != 4)
       e *= shadow(s, j, column) * (.75f + .25f * ao);
 #else
@@ -2509,7 +2509,7 @@ typedef struct {
 static EnergySpan verticalEnergy[704], horizontalEnergy[880];
 static void energyProbe(Surface *probe, float coordinate,
                         const FloorDirection *direction) {
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
   float px = surfX(probe), py = surfY(probe), pz = surfZ(probe);
   int snz = surfNz(probe), kind = surfKind(probe);
   if (!direction) {
@@ -2535,7 +2535,7 @@ static void energyProbe(Surface *probe, float coordinate,
 }
 static void sampleEnergy(const Surface *s, const float *flicker, int column,
                          int row, float *energy) {
-#ifdef OE2_QA_INTERACTIONS
+#ifdef OE_QA_INTERACTIONS
   if (costMode == 3) {
     incidentEnergy(s, flicker, column, energy);
     return;
@@ -2644,7 +2644,7 @@ static void sampleEnergy(const Surface *s, const float *flicker, int column,
 }
 static int lutReady;
 static float byteToLinear[256];
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
 static uint16_t byteToLinearQ10[256];
 #endif
 static uint8_t sqrtLUT[4097];
@@ -2655,7 +2655,7 @@ static void initLUT(void) {
   for (int i = 0; i < 256; i++) {
     float v = i / 255.f;
     byteToLinear[i] = v * v;
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
     byteToLinearQ10[i] = (uint16_t)(v * v * 1024.f + .5f);
 #endif
   }
@@ -2673,7 +2673,7 @@ static inline uint32_t shadePixelWithEnergy(const Surface *s, uint32_t c,
                                             const float *energy) {
   float sx = surfX(s), sy = surfY(s);
   int kind = surfKind(s);
-#ifdef OE2_QA_INTERACTIONS
+#ifdef OE_QA_INTERACTIONS
   uint32_t out = 0xff000000u;
   float depth = (sx - renderer->viewX) * fx + (sy - renderer->viewY) * fy;
   float haze = kind == 4 ? 0
@@ -2759,8 +2759,8 @@ static int staffShift(void) {
   int bottom = BrewLight_weaponBottom();
   return bottom >= 0 ? height - 1 - bottom : 0;
 }
-#ifndef OE2_QA_INTERACTIONS
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifndef OE_QA_INTERACTIONS
+#ifdef OE_NO_SPRITE_SHADOWS
 static uint16_t lowResEnergyQ10[400 * 240][3];
 static unsigned char lowResReady[400 * 240];
 static uint8_t lowResGen = 0;
@@ -3492,7 +3492,7 @@ static void lightRunRange(LightWorkerCtx *ctx, const uint32_t *original,
     }
   }
 }
-#ifdef OE2_LIGHT_MT
+#ifdef OE_LIGHT_MT
 typedef SceUID LightSema;
 static inline int lightSemaInit(LightSema *s, const char *name, int maxVal) {
   *s = sceKernelCreateSema(name, 0, 0, maxVal, NULL);
@@ -3618,7 +3618,7 @@ static const uint32_t *present(const uint32_t *original, int w, int h,
   initLUT();
   float flicker[8];
   weaponEnergyValid = 0;
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
   if (++shadowFrameGen == 0) {
     memset(lightWorkerCtx, 0, sizeof(lightWorkerCtx));
     memset(shadowColumns, 0, (size_t)w * sizeof(shadowColumns[0]));
@@ -3630,7 +3630,7 @@ static const uint32_t *present(const uint32_t *original, int w, int h,
   memset(floorShadowCache, 0, sizeof(floorShadowCache));
   memset(shadowColumns, 0, (size_t)w * sizeof(shadowColumns[0]));
 #endif
-#ifdef OE2_QA_INTERACTIONS
+#ifdef OE_QA_INTERACTIONS
   if (w > 176) {
     memset(verticalEnergy, 0, (size_t)w * sizeof(verticalEnergy[0]));
     memset(horizontalEnergy, 0, (size_t)h * sizeof(horizontalEnergy[0]));
@@ -3641,11 +3641,11 @@ static const uint32_t *present(const uint32_t *original, int w, int h,
     memset(horizontalEnergy, 0, (size_t)h * sizeof(horizontalEnergy[0]));
   }
 #endif
-#ifdef OE2_QA_INTERACTIONS
+#ifdef OE_QA_INTERACTIONS
   double started = emscripten_get_now(), shadingStarted;
 #endif
   if (lighting) {
-#ifndef OE2_NO_SPRITE_SHADOWS
+#ifndef OE_NO_SPRITE_SHADOWS
     memset(cornerCache, 0, (size_t)w * sizeof(cornerCache[0]));
 #endif
     gather(renderer);
@@ -3668,7 +3668,7 @@ static const uint32_t *present(const uint32_t *original, int w, int h,
       }
     }
   }
-#ifdef OE2_QA_INTERACTIONS
+#ifdef OE_QA_INTERACTIONS
   shadingStarted = emscripten_get_now();
   profile[0] = shadingStarted - started;
   profile[3] = numLights;
@@ -3677,11 +3677,11 @@ static const uint32_t *present(const uint32_t *original, int w, int h,
     profile[4] += casterCount[j];
 #endif
   traceActive = lighting;
-#ifndef OE2_QA_INTERACTIONS
+#ifndef OE_QA_INTERACTIONS
   if (lighting && w <= 400 && h <= 240) {
     const Surface *surfBase = surfaces;
     int xStep = (w > 176) ? 8 : 4;
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
     if (++lowResGen == 0 || lowResGenW != w || lowResGenH != h) {
       memset(lowResReady, 0, (size_t)w * (size_t)h);
       lowResGen = 1;
@@ -3690,7 +3690,7 @@ static const uint32_t *present(const uint32_t *original, int w, int h,
     }
     unsigned char readyTag = lowResGen;
     int xShift = (w > 176) ? 3 : 2;
-#ifdef OE2_LIGHT_MT
+#ifdef OE_LIGHT_MT
     if (w > 176 && initLightWorkers()) {
       int chunkW = xStep * 4, numChunks = (w + chunkW - 1) / chunkW;
       curLightJob = (LightJob){original, flicker, w,      h,         shift,
@@ -3927,7 +3927,7 @@ static const uint32_t *present(const uint32_t *original, int w, int h,
       }
     }
   }
-#ifdef OE2_QA_INTERACTIONS
+#ifdef OE_QA_INTERACTIONS
   profile[1] = emscripten_get_now() - shadingStarted;
   double haloStarted = emscripten_get_now();
 #endif
@@ -3943,7 +3943,7 @@ static const uint32_t *present(const uint32_t *original, int w, int h,
               lighting ? shadePixel(&surfaces[i], original[i], flicker, x, y)
                        : original[i];
       }
-#ifdef OE2_QA_INTERACTIONS
+#ifdef OE_QA_INTERACTIONS
   profile[2] = emscripten_get_now() - haloStarted;
 #endif
   traceActive = 0;

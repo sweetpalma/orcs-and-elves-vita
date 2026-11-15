@@ -1,5 +1,5 @@
-#ifndef OE2_CORE_LOCAL_H
-#define OE2_CORE_LOCAL_H
+#ifndef OE_CORE_LOCAL_H
+#define OE_CORE_LOCAL_H
 
 /* Helpers shared by the core package's own files (app.c, core_*.c).
  * Nothing here is part of the original engine's interface. */

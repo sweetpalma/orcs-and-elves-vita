@@ -25,7 +25,7 @@ target_include_directories(oe1 PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/oe1
 	${CMAKE_CURRENT_SOURCE_DIR}/../../host
 )
-target_compile_definitions(oe1 PRIVATE OE2_STANDALONE_BRIDGE OE2_NO_SPRITE_SHADOWS GAME_OE1=1)
+target_compile_definitions(oe1 PRIVATE OE_STANDALONE_BRIDGE OE_NO_SPRITE_SHADOWS GAME_OE1=1)
 target_link_libraries(oe1 PRIVATE oecore PkgConfig::SDL2 m)
 
 # OE2 (Orcs & Elves II)
@@ -41,7 +41,7 @@ target_include_directories(oe2 PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/oe2
 	${CMAKE_CURRENT_SOURCE_DIR}/../../host
 )
-target_compile_definitions(oe2 PRIVATE OE2_STANDALONE_BRIDGE OE2_NO_SPRITE_SHADOWS GAME_OE2=1)
+target_compile_definitions(oe2 PRIVATE OE_STANDALONE_BRIDGE OE_NO_SPRITE_SHADOWS GAME_OE2=1)
 target_link_libraries(oe2 PRIVATE oecore PkgConfig::SDL2 m)
 
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
@@ -51,7 +51,7 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
 	target_compile_options(oe2 PRIVATE -fwrapv -funsigned-char -Wall -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function)
 endif()
 
-if(OE2_SANITIZE)
+if(OE_SANITIZE)
 	foreach(t oecore oe2tool oe1 oe2)
 		target_compile_options(${t} PRIVATE -fsanitize=address,undefined -fno-sanitize=shift-base -fno-omit-frame-pointer)
 		target_link_options(${t} PRIVATE -fsanitize=address,undefined)

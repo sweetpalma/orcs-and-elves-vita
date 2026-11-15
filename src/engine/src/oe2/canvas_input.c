@@ -152,7 +152,7 @@ int Canvas_handleEvent(Canvas *canvas, int avk)
 
 	if (avk == AVK_SEND)
 		return 1;
-	if (getenv("OE2_KEYLOG")) /* developer aid: trace keys with state and action */
+	if (getenv("OE_KEYLOG")) /* developer aid: trace keys with state and action */
 		fprintf(stderr, "key %x state %d action %d moveCount %d\n", avk, canvas->state, Canvas_getKeyAction(canvas, avk), canvas->moveCount);
 
 	if (app->sndSys->enabled) {

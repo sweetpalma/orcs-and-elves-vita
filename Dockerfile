@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libavutil-dev \
  && rm -rf /var/lib/apt/lists/*
 
-ENV OE2_DATA_DIR=/data
+ENV OE_DATA_DIR=/data
 WORKDIR /work
 
 VOLUME ["/work", "/data"]

@@ -30,9 +30,9 @@ The presentation layer that adds modern graphical enhancements without affecting
 - **`lighting.c` / `lighting.h`:** Real-time point lighting, dynamic candle/torch flicker, geometric ray-cast shadows, and contact ambient occlusion.
 - **`presentation.c` / `presentation.h`:** Screen buffers and post-processing adapters.
 - **`standalone_bridge.c` / `standalone_bridge.h`:** Decouples game logic from the display platform:
-  - Intercepts 3D frames (`OE2_captureWorld`, `OE2_presentFrame`).
+  - Intercepts 3D frames (`OE_captureWorld`, `OE_presentFrame`).
   - Switches between Classic and Remastered modes in real time.
-  - Manages configuration persistence (`LightingCfg`) and tick rate toggling (`OE2_getTickMs`).
+  - Manages configuration persistence (`LightingCfg`) and tick rate toggling (`OE_getTickMs`).
 
 ## Vita Port
 

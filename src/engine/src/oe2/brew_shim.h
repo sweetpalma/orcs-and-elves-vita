@@ -1,5 +1,5 @@
-#ifndef OE2_BREW_SHIM_H
-#define OE2_BREW_SHIM_H
+#ifndef OE_BREW_SHIM_H
+#define OE_BREW_SHIM_H
 
 /*
  * The small part of the BREW runtime that Orcs & Elves II used, re-implemented

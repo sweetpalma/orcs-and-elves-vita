@@ -1,5 +1,5 @@
-#ifndef OE2_MODDATA_H
-#define OE2_MODDATA_H
+#ifndef OE_MODDATA_H
+#define OE_MODDATA_H
 
 /*
  * Read-only access to data tables that the original game keeps inside its

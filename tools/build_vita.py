@@ -47,7 +47,7 @@ GAME_CONFIG = {
 
 
 def resolve_data_dir() -> Path:
-    env = os.environ.get("OE2_DATA_DIR")
+    env = os.environ.get("OE_DATA_DIR")
     if env:
         return Path(env)
     for p in (ROOT / "data", ROOT / "build/pc", ROOT / "gamedata"):
@@ -153,8 +153,8 @@ def build_vita_game(game: str, bundle_data: bool = False):
         "-ftree-vectorize",
         "-fwrapv",
         "-funsigned-char",
-        "-DOE2_STANDALONE_BRIDGE",
-        "-DOE2_NO_SPRITE_SHADOWS",
+        "-DOE_STANDALONE_BRIDGE",
+        "-DOE_NO_SPRITE_SHADOWS",
         *cfg["cflags"],
         "-I" + str(ROOT / "src/engine/src"),
         "-I" + str(game_dir),

@@ -208,7 +208,7 @@ int Canvas_startup(Canvas *canvas) {
    * status bar on tall screens and an even render height */
   sh = canvas->screenRect[3];
   renderH = (int16_t)(canvas->viewRect[3] - 35);
-#ifdef OE2_STANDALONE_BRIDGE
+#ifdef OE_STANDALONE_BRIDGE
   if (w > 176) {
     canvas->hasStatusBar = 0;
     canvas->usableHeight = (int16_t)sh;
@@ -227,7 +227,7 @@ int Canvas_startup(Canvas *canvas) {
   if (renderH & 1)
     renderH = (int16_t)(renderH - 1);
   canvas->viewRect[0] = (int16_t)((w - vw) / 2);
-#ifdef OE2_STANDALONE_BRIDGE
+#ifdef OE_STANDALONE_BRIDGE
   if (w > 176)
     canvas->viewRect[3] = (int16_t)sh;
   else
@@ -917,7 +917,7 @@ int Canvas_updatePlaying(Canvas *canvas) {
     ParticleSystem_freeAll(canvas->particles);
   Canvas_updateMovement(canvas, 0, 0);
   ParticleSystem_update(canvas->particles, 1);
-  OE2_captureRenderedWorld(app->render);
+  OE_captureRenderedWorld(app->render);
 
   if (canvas->hideHud) {
     /* controls help over a black screen */
@@ -1068,7 +1068,7 @@ void Canvas_renderView(Canvas *canvas, int x, int y, int angle) {
              app->player->statusEffects[SE_TINT].turns > 0) {
     Render_tintScreen(app->render);
   }
-  OE2_captureWorld(canvas->renderRect);
+  OE_captureWorld(canvas->renderRect);
 }
 
 /* Debug overlay: "tileX tileY DIR". */

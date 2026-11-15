@@ -12,7 +12,7 @@ DEFAULT_OUTPUT_DIR = ROOT / "src/vita/assets"
 
 
 def resolve_data_dir() -> Path:
-    env = os.environ.get("OE2_DATA_DIR")
+    env = os.environ.get("OE_DATA_DIR")
     if env:
         return Path(env)
     for p in (ROOT / "data", ROOT / "build/pc", ROOT / "gamedata"):
@@ -264,7 +264,7 @@ def parse_args():
         "--data-dir",
         type=Path,
         default=None,
-        help="Directory containing game data (default: auto-detected from data/ or OE2_DATA_DIR)",
+        help="Directory containing game data (default: auto-detected from data/ or OE_DATA_DIR)",
     )
     parser.add_argument(
         "--output-dir",
@@ -283,7 +283,7 @@ def main():
     if not bar_path.is_file():
         raise RuntimeError(
             f"Could not find {bar_name} in {data_dir}.\n"
-            "Please provide a valid data directory with --data-dir <dir> or OE2_DATA_DIR."
+            "Please provide a valid data directory with --data-dir <dir> or OE_DATA_DIR."
         )
     output_dir = args.output_dir or (DEFAULT_OUTPUT_DIR / args.game)
     build_livearea_assets(bar_path, output_dir, game=args.game)

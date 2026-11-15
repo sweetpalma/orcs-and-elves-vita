@@ -10,7 +10,7 @@ set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS ON)
 
-option(OE2_SANITIZE "Build with ASan/UBSan" OFF)
+option(OE_SANITIZE "Build with ASan/UBSan" OFF)
 
 find_package(PkgConfig QUIET)
 if(PKG_CONFIG_FOUND)

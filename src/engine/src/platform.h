@@ -1,5 +1,5 @@
-#ifndef OE2_PLATFORM_H
-#define OE2_PLATFORM_H
+#ifndef OE_PLATFORM_H
+#define OE_PLATFORM_H
 
 /* Host services that replace the BREW runtime: window + framebuffer, keys,
  * time, files in data/, and PCM sound channels. */

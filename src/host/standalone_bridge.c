@@ -45,7 +45,7 @@ static inline uint16_t to_rgb565(uint32_t rgba) {
                     ((rgba & 0xf80000u) >> 19));
 }
 
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
 static uint32_t hash_fb_rect(const IBitmap *b, int x, int y, int w, int h) {
   uint32_t hash = 2166136261u;
   for (int row = 0; row < h; row += 2) {
@@ -72,9 +72,9 @@ static void apply_world_lighting(int x, int y, int w, int h) {
       y + h > b->height)
     return;
   if (!hostConfigLoaded)
-    OE2_loadHostConfig();
+    OE_loadHostConfig();
   ensure_lut565();
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
   uint32_t sig = hash_fb_rect(b, x, y, w, h);
 #else
   int count = w * h;
@@ -101,7 +101,7 @@ static void apply_world_lighting(int x, int y, int w, int h) {
   lastViewZ = vz;
   lastViewAngle = va;
 
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
   for (int row = 0; row < h; row++) {
     const uint16_t *srcRow = &b->px[(y + row) * b->pitch + x];
     uint32_t *dstRow = &worldPixels[row * w];
@@ -132,11 +132,11 @@ static void apply_world_lighting(int x, int y, int w, int h) {
   worldValid = 1;
 }
 
-void OE2_projectileImpact(const GameSprite *missile, int flaming) {
+void OE_projectileImpact(const GameSprite *missile, int flaming) {
   BrewLight_impact(missile, flaming);
 }
 
-void OE2_captureWorld(const int16_t *rect) {
+void OE_captureWorld(const int16_t *rect) {
   if (skipPresent)
     return;
   IBitmap *b = Brew_screen();
@@ -144,7 +144,7 @@ void OE2_captureWorld(const int16_t *rect) {
   if (!b || x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > b->width ||
       y + h > b->height)
     return;
-#ifndef OE2_NO_SPRITE_SHADOWS
+#ifndef OE_NO_SPRITE_SHADOWS
   ensure_lut565();
   for (int row = 0; row < h; row++) {
     const uint16_t *srcRow = &b->px[(y + row) * b->pitch + x];
@@ -165,18 +165,18 @@ void OE2_captureWorld(const int16_t *rect) {
 #endif
 }
 
-void OE2_captureRenderedWorld(Render *r) {
+void OE_captureRenderedWorld(Render *r) {
   if (!r || !g_app || !g_app->game || !g_app->canvas)
     return;
 #if defined(GAME_OE1)
   int16_t rect[4] = {(int16_t)r->viewportX, (int16_t)r->viewportY,
                      (int16_t)r->viewW, (int16_t)r->viewH};
-  OE2_captureWorld(rect);
+  OE_captureWorld(rect);
 #else
   if (g_app->canvas->snapView) {
     int16_t rect[4] = {(int16_t)r->fbOffsetX, (int16_t)r->fbOffsetY,
                        (int16_t)r->width, (int16_t)r->height};
-    OE2_captureWorld(rect);
+    OE_captureWorld(rect);
     return;
   }
   if (!Game_isCinematicActive(g_app->game))
@@ -189,12 +189,12 @@ void OE2_captureRenderedWorld(Render *r) {
   if (cineCallsThisFrame == 2) {
     int16_t rect[4] = {(int16_t)r->fbOffsetX, (int16_t)r->fbOffsetY,
                        (int16_t)r->width, (int16_t)r->height};
-    OE2_captureWorld(rect);
+    OE_captureWorld(rect);
   }
 #endif
 }
 
-void OE2_loadHostConfig(void) {
+void OE_loadHostConfig(void) {
   uint8_t *data = NULL;
   size_t len = 0;
   if (Plat_fileRead("LightingCfg", &data, &len) == 0) {
@@ -204,7 +204,7 @@ void OE2_loadHostConfig(void) {
     }
     free(data);
   }
-  const char *e = getenv("OE2_REMASTERED");
+  const char *e = getenv("OE_REMASTERED");
   if (e)
     remasteredMode = atoi(e) ? 1 : 0;
   BrewLight_setRange(rangeSteps);
@@ -212,8 +212,8 @@ void OE2_loadHostConfig(void) {
   hostConfigLoaded = 1;
 }
 
-void OE2_saveHostConfig(void) {
-  if (getenv("OE2_REMASTERED"))
+void OE_saveHostConfig(void) {
+  if (getenv("OE_REMASTERED"))
     return;
   uint8_t buf[8] = {'O',
                     'E',
@@ -228,26 +228,26 @@ void OE2_saveHostConfig(void) {
 
 static void ensure_host_config(void) {
   if (!hostConfigLoaded)
-    OE2_loadHostConfig();
+    OE_loadHostConfig();
 }
 
-void OE2_setRemastered(int enabled) {
+void OE_setRemastered(int enabled) {
   ensure_host_config();
   remasteredMode = enabled ? 1 : 0;
   lastFrameSig = 0;
-  OE2_saveHostConfig();
+  OE_saveHostConfig();
 }
 
-int OE2_isRemastered(void) {
+int OE_isRemastered(void) {
   ensure_host_config();
   return remasteredMode;
 }
 
-int OE2_toggleRemastered(void) {
+int OE_toggleRemastered(void) {
   ensure_host_config();
   remasteredMode = !remasteredMode;
   lastFrameSig = 0;
-  OE2_saveHostConfig();
+  OE_saveHostConfig();
   if (worldValid) {
     IBitmap *b = Brew_screen();
     if (b && worldX >= 0 && worldY >= 0 && worldX + worldW <= b->width &&
@@ -274,11 +274,11 @@ int OE2_toggleRemastered(void) {
   return remasteredMode;
 }
 
-int OE2_isFastTick(void) { return 0; }
+int OE_isFastTick(void) { return 0; }
 
-int OE2_toggleFastTick(void) { return 0; }
+int OE_toggleFastTick(void) { return 0; }
 
-int OE2_getTickMs(void) {
+int OE_getTickMs(void) {
   ensure_host_config();
 #if defined(GAME_OE1)
   return 15;
@@ -287,12 +287,12 @@ int OE2_getTickMs(void) {
 #endif
 }
 
-void OE2_setSkipPresent(int skip) {
+void OE_setSkipPresent(int skip) {
   skipPresent = skip ? 1 : 0;
   BrewLight_setSkip(skipPresent);
 }
 
-int OE2_shouldSkipPresent(void) { return skipPresent; }
+int OE_shouldSkipPresent(void) { return skipPresent; }
 
 /* Minimal 4x5 uppercase glyph table for the mode toggle toast. */
 static uint32_t glyph_bits(char c) {
@@ -369,11 +369,11 @@ static int is_3d_state(int st) {
          st == 18 || st == 19 || st == 20 || st == 21;
 }
 
-void OE2_presentFrame(const uint16_t *fb, int pitchPixels, int scrW, int scrH,
+void OE_presentFrame(const uint16_t *fb, int pitchPixels, int scrW, int scrH,
                       uint32_t *outRgba) {
   cineCallsThisFrame = 0;
   ensure_lut565();
-#ifdef OE2_NO_SPRITE_SHADOWS
+#ifdef OE_NO_SPRITE_SHADOWS
   int useLit = worldValid && g_app && g_app->canvas &&
                is_3d_state(g_app->canvas->state) && worldX >= 0 &&
                worldY >= 0 && worldX + worldW <= scrW &&

@@ -1148,7 +1148,7 @@ void Combat_resolveProjectiles(Combat *combat) {
     }
 
     int x = gs->dest[0], y = gs->dest[1], z = gs->dest[2];
-    OE2_projectileImpact(gs, combat->bonusFlag);
+    OE_projectileImpact(gs, combat->bonusFlag);
     Game_gspriteDestroy(app->game, gs);
     if (combat->projSprite != 0 &&
         (combat->attacker == NULL ||

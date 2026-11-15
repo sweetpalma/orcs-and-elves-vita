@@ -1,6 +1,6 @@
 /* SDL2 implementation of platform.h */
 #include "platform.h"
-#ifdef OE2_STANDALONE_BRIDGE
+#ifdef OE_STANDALONE_BRIDGE
 #include "standalone_bridge.h"
 #endif
 
@@ -18,7 +18,7 @@
 static SDL_Window *win;
 static SDL_Renderer *ren;
 static SDL_Texture *tex;
-#ifdef OE2_STANDALONE_BRIDGE
+#ifdef OE_STANDALONE_BRIDGE
 static uint32_t *rgbaFrame;
 #endif
 static int scrW, scrH;
@@ -63,7 +63,7 @@ int Plat_init(int screenW, int screenH, const char *title) {
   }
   SDL_RenderSetLogicalSize(ren, screenW, screenH);
   SDL_RenderSetIntegerScale(ren, SDL_FALSE);
-#ifdef OE2_STANDALONE_BRIDGE
+#ifdef OE_STANDALONE_BRIDGE
   tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ABGR8888,
                           SDL_TEXTUREACCESS_STREAMING, screenW, screenH);
   rgbaFrame = calloc((size_t)screenW * (size_t)screenH, sizeof(uint32_t));
@@ -81,7 +81,7 @@ int Plat_init(int screenW, int screenH, const char *title) {
 
 void Plat_shutdown(void) {
   Audio_shutdown();
-#ifdef OE2_STANDALONE_BRIDGE
+#ifdef OE_STANDALONE_BRIDGE
   free(rgbaFrame);
   rgbaFrame = NULL;
 #endif
@@ -121,10 +121,10 @@ void Plat_present(const uint16_t *fb, int pitchPixels) {
   if (!tex || virtClock) /* headless test runs: nothing to show; skipping the
                             upload/present keeps them fast */
     return;
-#ifdef OE2_STANDALONE_BRIDGE
-  if (OE2_shouldSkipPresent())
+#ifdef OE_STANDALONE_BRIDGE
+  if (OE_shouldSkipPresent())
     return;
-  OE2_presentFrame(fb, pitchPixels, scrW, scrH, rgbaFrame);
+  OE_presentFrame(fb, pitchPixels, scrW, scrH, rgbaFrame);
   SDL_UpdateTexture(tex, NULL, rgbaFrame, scrW * (int)sizeof(uint32_t));
 #else
   SDL_UpdateTexture(tex, NULL, fb, pitchPixels * 2);
@@ -214,10 +214,10 @@ int Plat_pollEvents(PlatKeyEvent *ev, int max, int *count) {
                                          : SDL_WINDOW_FULLSCREEN_DESKTOP);
         break;
       }
-#ifdef OE2_STANDALONE_BRIDGE
+#ifdef OE_STANDALONE_BRIDGE
       if (e.type == SDL_KEYDOWN && !e.key.repeat &&
           e.key.keysym.sym == SDLK_F2) {
-        OE2_toggleRemastered();
+        OE_toggleRemastered();
         break;
       }
 #endif

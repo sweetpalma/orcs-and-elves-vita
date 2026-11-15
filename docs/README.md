@@ -10,5 +10,8 @@ This directory contains technical documentation, system architecture references,
 - `LIGHTING.md`:
   In-depth guide to the remastered dynamic lighting system (`src/host/lighting.c`): candidate selection, view-frustum scoring, geometric ray shadows, ambient occlusion, billboard sprite shading, distance culling pitfalls, and Vita-specific performance optimizations.
 
+- `ENVIRONMENT.md`:
+  Complete reference for all build variables, compile-time flags, CLI options, and runtime environment variables (`OE_DATA_DIR`, `OE_PIPE`, `OE_REMASTERED`, `OE_STANDALONE_BRIDGE`, etc.).
+
 - `RESOURCES.md`:
   Reverse-engineered binary formats and resource layout for Qualcomm BREW 7.x (`orcsandelves2.bar`): entity records, weapon definitions, string tables, 32x32 map BSP formats, graphics mappings, bitshapes, texels, and palettes.

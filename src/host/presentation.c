@@ -102,7 +102,7 @@ static const uint32_t *view(const uint32_t *original,int width,int height,int gp
 const uint32_t *BrewView_lit(const uint32_t *original,int width,int height){return view(original,width,height,0);}
 const uint32_t *BrewView_gpu(const uint32_t *original,int width,int height){return view(original,width,height,1);}
 
-#ifdef OE2_QA_INTERACTIONS
+#ifdef OE_QA_INTERACTIONS
 int BrewView_qaSpriteCommand(int index,int field){
  for(int i=0;i<count;i++)if(commands[i].type==2){if(index--==0)return field>=0&&field<8?commands[i].args[field]:-1;}
  return -1;

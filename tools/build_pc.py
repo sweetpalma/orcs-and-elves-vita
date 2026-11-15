@@ -33,7 +33,7 @@ GAME_CONFIG = {
 
 
 def resolve_data_dir() -> Path:
-    env = os.environ.get("OE2_DATA_DIR")
+    env = os.environ.get("OE_DATA_DIR")
     if env:
         return Path(env)
     for p in (ROOT / "data", ROOT / "build/pc", ROOT / "gamedata"):

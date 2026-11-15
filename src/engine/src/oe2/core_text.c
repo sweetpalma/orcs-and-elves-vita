@@ -75,7 +75,7 @@ int Text_loadStringGroup(Canvas *canvas, int group) {
  * "%1".."%6" with Canvas.textArgs (or textIntArgs when the text arg is empty),
  * "\%" to '%' and "\n" to a newline. */
 void Text_getString(Canvas *canvas, int group, int idx, String *out) {
-#ifdef OE2_STANDALONE_BRIDGE
+#ifdef OE_STANDALONE_BRIDGE
   if (group == 3 && idx == 0x47) {
     String_appendCStr_76f0(out, "Help");
     return;
@@ -205,7 +205,7 @@ int Text_findString(Canvas *canvas, int group, String *str) {
  * without loading the group (used for long help texts). */
 void Text_readStringFromRes(Canvas *canvas, int group, int idx,
                             String *outStr) {
-#ifdef OE2_STANDALONE_BRIDGE
+#ifdef OE_STANDALONE_BRIDGE
   if (group == 2 /* TEXT_GROUP_HELP */) {
     switch (idx) {
     case 1: /* How to Play */

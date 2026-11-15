@@ -1,5 +1,5 @@
-#ifndef OE2_PMD_H
-#define OE2_PMD_H
+#ifndef OE_PMD_H
+#define OE_PMD_H
 
 #include <stddef.h>
 #include <stdint.h>

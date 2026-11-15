@@ -970,7 +970,7 @@ void Render_render(Render *render, int viewX, int viewY, int viewZ, int angle) {
       render->effCeil = 0x80;
   }
 
-#ifdef OE2_CINEMATIC_CAPTURE
+#ifdef OE_CINEMATIC_CAPTURE
   Film_adjustView(render);
 #endif
   BrewView_begin(render);
@@ -996,5 +996,5 @@ void Render_render(Render *render, int viewX, int viewY, int viewZ, int angle) {
                                       ((uint32_t)(render->viewX >> 6) << 16) |
                                       ((uint32_t)(render->viewY >> 6) << 24));
   }
-  OE2_captureRenderedWorld(render);
+  OE_captureRenderedWorld(render);
 }

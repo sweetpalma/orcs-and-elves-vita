@@ -262,9 +262,9 @@ done:
 }
 
 void Plat_present(const uint16_t *fb, int pitchPixels) {
-  if (!tex || !rgbaFrame || virtClock || OE2_shouldSkipPresent())
+  if (!tex || !rgbaFrame || virtClock || OE_shouldSkipPresent())
     return;
-  OE2_presentFrame(fb, pitchPixels, scrW, scrH, rgbaFrame);
+  OE_presentFrame(fb, pitchPixels, scrW, scrH, rgbaFrame);
   SDL_UpdateTexture(tex, NULL, rgbaFrame, scrW * (int)sizeof(uint32_t));
   SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
   SDL_RenderClear(ren);
@@ -384,7 +384,7 @@ int Plat_pollEvents(PlatKeyEvent *ev, int max, int *count) {
       SDL_Keycode k = e.key.keysym.sym;
       if (e.type == SDL_KEYDOWN && !e.key.repeat) {
         if (k == SDLK_F2) {
-          OE2_toggleRemastered();
+          OE_toggleRemastered();
           break;
         }
         if (k == SDLK_F11) {

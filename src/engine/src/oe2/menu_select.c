@@ -6,7 +6,7 @@
  */
 
 #include "game.h"
-#ifdef OE2_STANDALONE_BRIDGE
+#ifdef OE_STANDALONE_BRIDGE
 #include "standalone_bridge.h"
 #endif
 
@@ -261,9 +261,9 @@ static int selectOptions(Menu *menus, int item)
 			Sound_applyVolume(snd);
 			String_setLength(&ms->items[3].text2, 0);
 			String_appendChar(String_appendInt(&ms->items[3].text2, snd->volume), '%');
-#ifdef OE2_STANDALONE_BRIDGE
+#ifdef OE_STANDALONE_BRIDGE
 		} else if (item == 4) {
-			int on = OE2_toggleRemastered();
+			int on = OE_toggleRemastered();
 			String_setLength(&ms->items[4].text2, 0);
 			String_appendCStr_76f0(&ms->items[4].text2, on ? "On" : "Off");
 #endif
@@ -302,9 +302,9 @@ static int selectOptions(Menu *menus, int item)
 			Sound_applyVolume(snd);
 			menus->volume = snd->volume;
 			volumeItem = menus->soundItem;
-#ifdef OE2_STANDALONE_BRIDGE
+#ifdef OE_STANDALONE_BRIDGE
 		} else if (item == 3) {
-			int on = OE2_toggleRemastered();
+			int on = OE_toggleRemastered();
 			String_setLength(&ms->items[3].text2, 0);
 			String_appendCStr_76f0(&ms->items[3].text2, on ? "On" : "Off");
 			Game_saveConfig(app->game);

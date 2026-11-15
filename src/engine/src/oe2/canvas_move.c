@@ -379,7 +379,7 @@ void Canvas_updateMovement(Canvas *cv, int unused1, int unused2) {
   if (Game_isCinematicActive(app->game)) {
     Camera_apply(app->game->activeCamera);
     ParticleSystem_update(cv->particles, 1);
-    OE2_captureRenderedWorld(app->render);
+    OE_captureRenderedWorld(app->render);
     if (cv->state != ST_DIALOG ||
         (cv->dialogStyle != 1 && cv->dialogStyle != 8)) {
       /* letterbox bars */

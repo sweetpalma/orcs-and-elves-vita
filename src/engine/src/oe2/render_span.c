@@ -375,7 +375,7 @@ void Render_drawFlatRow(Render *render, int x, int y, void *tex64, int width,
                         int mode) {
   int vx16 = rshl(render->viewX, 16);
   int vy16 = rshl(render->viewY, 16);
-#ifdef OE2_CINEMATIC_CAPTURE
+#ifdef OE_CINEMATIC_CAPTURE
   Film_offsetFloor(&vx16, &vy16);
 #endif
   int y2 = y * 2;
@@ -666,7 +666,7 @@ void Render_drawImage(Render *render, Image *img, int dx, int dy, int sx,
     /* the original passes a pointer to a colour pair; callers pass 0,
      * which selects Render.blendArg/blendArg2 */
     if (arg != 0)
-      OE2_UNIMPLEMENTED(
+      OE_UNIMPLEMENTED(
           "Render_drawImage mode 10 with an explicit colour pair");
     g_replacePair[0] = (uint16_t)render->blendArg;
     g_replacePair[1] = (uint16_t)render->blendArg2;

@@ -898,5 +898,5 @@ void Render_render(Render *render, int viewX, int viewY, int viewZ, int angle)
 		                                        (uint32_t)rshl(render->viewX >> 6, 16) |
 		                                        (uint32_t)rshl(render->viewY >> 6, 24));
 	Hw_endScene();
-	OE2_captureRenderedWorld(render);
+	OE_captureRenderedWorld(render);
 }

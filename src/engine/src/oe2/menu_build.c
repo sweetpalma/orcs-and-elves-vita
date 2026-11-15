@@ -14,7 +14,7 @@
  */
 
 #include "game.h"
-#ifdef OE2_STANDALONE_BRIDGE
+#ifdef OE_STANDALONE_BRIDGE
 #include "standalone_bridge.h"
 #endif
 
@@ -756,11 +756,11 @@ static void buildOptions(Menu *menu, MenuSystem *ms, int menuId) {
   }
   menu->volume = app->sndSys->volume;
   Menus_setVolumeItem(menu, ms->numItems++);
-#ifdef OE2_STANDALONE_BRIDGE
+#ifdef OE_STANDALONE_BRIDGE
   String_setLength(&menu->scratch0, 0);
   String_appendCStr_76f0(&menu->scratch0, "Lighting:");
   String_setLength(&menu->scratch1, 0);
-  String_appendCStr_76f0(&menu->scratch1, OE2_isRemastered() ? "On" : "Off");
+  String_appendCStr_76f0(&menu->scratch1, OE_isRemastered() ? "On" : "Off");
   MenuSystem_addItem(menu, &menu->scratch0, &menu->scratch1, 0);
 #endif
 }

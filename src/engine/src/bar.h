@@ -1,5 +1,5 @@
-#ifndef OE2_BAR_H
-#define OE2_BAR_H
+#ifndef OE_BAR_H
+#define OE_BAR_H
 
 #include <stddef.h>
 #include <stdint.h>

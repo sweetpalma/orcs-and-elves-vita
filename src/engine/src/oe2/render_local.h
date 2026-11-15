@@ -1,5 +1,5 @@
-#ifndef OE2_RENDER_LOCAL_H
-#define OE2_RENDER_LOCAL_H
+#ifndef OE_RENDER_LOCAL_H
+#define OE_RENDER_LOCAL_H
 
 /*
  * Private helpers shared by the render*.c files (the original Render class).

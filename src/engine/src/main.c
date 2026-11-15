@@ -9,7 +9,7 @@
 #include <string.h>
 
 #include "game.h"
-#ifdef OE2_STANDALONE_BRIDGE
+#ifdef OE_STANDALONE_BRIDGE
 #include "standalone_bridge.h"
 #endif
 
@@ -32,15 +32,15 @@
   0x40 /* dwParam flag on repeated EVT_KEYs; the applet ignores dwParam */
 
 /* ---- headless test hooks (developer use) ----
- * OE2_TICKS=N             quit after N ticks
- * OE2_KEYS=t:k,t:k,...    press BREW key k (hex AVK or name:
+ * OE_TICKS=N             quit after N ticks
+ * OE_KEYS=t:k,t:k,...    press BREW key k (hex AVK or name:
  * up,down,left,right,select,soft1,soft2,clr, star,pound,0..9) at tick t
- * OE2_SHOT=dir            write dir/tickNNNNN.ppm at every tick listed in
- * OE2_SHOT_AT (t,t,...) and at exit OE2_VCLOCK=1            virtual clock: 40
- * ms of game time per tick, no sleeping (deterministic timing) OE2_PIPE=1
- * lock-step control over stdin/stdout for test bots (implies OE2_VCLOCK), see
- * pipe_tick OE2_SEED=N              fixed GETRAND seed (brew_shim.c);
- * OE2_KEYLOG=1 logs keys (canvas_input.c) */
+ * OE_SHOT=dir            write dir/tickNNNNN.ppm at every tick listed in
+ * OE_SHOT_AT (t,t,...) and at exit OE_VCLOCK=1            virtual clock: 40
+ * ms of game time per tick, no sleeping (deterministic timing) OE_PIPE=1
+ * lock-step control over stdin/stdout for test bots (implies OE_VCLOCK), see
+ * pipe_tick OE_SEED=N              fixed GETRAND seed (brew_shim.c);
+ * OE_KEYLOG=1 logs keys (canvas_input.c) */
 typedef struct {
   int tick, key;
 } ScriptKey;
@@ -67,7 +67,7 @@ static int key_by_name(const char *s) {
 }
 
 static void parse_hooks(void) {
-  const char *k = getenv("OE2_KEYS"), *a = getenv("OE2_SHOT_AT");
+  const char *k = getenv("OE_KEYS"), *a = getenv("OE_SHOT_AT");
   static char buf[65536];
   char *tok, *save;
   if (k) {
@@ -112,7 +112,7 @@ static void write_ppm(const char *path) {
 }
 
 static void write_shot(int tick) {
-  const char *dir = getenv("OE2_SHOT");
+  const char *dir = getenv("OE_SHOT");
   char path[1024];
   if (!dir)
     return;
@@ -120,7 +120,7 @@ static void write_shot(int tick) {
   write_ppm(path);
 }
 
-/* OE2_PIPE: before every tick, print one status line on stdout, then read one
+/* OE_PIPE: before every tick, print one status line on stdout, then read one
  * command line from stdin and run it; then the tick runs. One input line = one
  * tick. Status line (one line): S <tick> st <Canvas.state> map <mapId> x
  * <tileX> y <tileY> ang <destAngle 0..1023, 0=east 256=north> hp <hp>/<max> xp
@@ -128,7 +128,7 @@ static void write_shot(int tick) {
  *   nitems <numItems> fam <isFamiliar> lock <lockSlot> <lockCorrectHits +
  * 10*lockDone> face '<name of the faced entity's def>' msg '<first HUD
  * message>' w <world_hash, 8 hex digits> Commands: empty line = just tick; key
- * names as in OE2_KEYS separated by spaces (pressed in order); "shot PATH" (PPM
+ * names as in OE_KEYS separated by spaces (pressed in order); "shot PATH" (PPM
  * of the current screen); "god" (Player.god = 1); "noclip" (toggle
  * Player.noclip); "tp X Y" (move the player to tile X,Y keeping the angle);
  * "quit" or EOF ends the run. Developer/QA use only (re/tools/qa/drv.py); the
@@ -280,7 +280,7 @@ static void usage(const char *argv0) {
 
 int main(int argc, char **argv) {
   const char *data = "data";
-#ifdef OE2_STANDALONE_BRIDGE
+#ifdef OE_STANDALONE_BRIDGE
   int w = 352, h = 200, fast = 0;
 #else
   int w = 176, h = 220, fast = 0;
@@ -340,10 +340,10 @@ int main(int argc, char **argv) {
   Applet_HandleEvent(app, EVT_APP_START, 0, 0);
 
   parse_hooks();
-  int tick = 0, maxTicks = getenv("OE2_TICKS") ? atoi(getenv("OE2_TICKS")) : -1;
-  int pipeMode = getenv("OE2_PIPE") != NULL;
+  int tick = 0, maxTicks = getenv("OE_TICKS") ? atoi(getenv("OE_TICKS")) : -1;
+  int pipeMode = getenv("OE_PIPE") != NULL;
   int vclock =
-      pipeMode || getenv("OE2_VCLOCK") !=
+      pipeMode || getenv("OE_VCLOCK") !=
                       NULL; /* 40 ms of game time per tick, no sleeping */
   if (vclock)
     Plat_setVirtualClock(1, 1000);
@@ -400,8 +400,8 @@ int main(int argc, char **argv) {
       /* Applet_Tick re-armed the 40 ms timer at its end (ISHELL_SetTimer); the
        * phone's deferred screen update happened inside those 40 ms, so
        * presenting must not delay the next tick. */
-#ifdef OE2_STANDALONE_BRIDGE
-      uint32_t stepMs = fast ? FAST_TICK_MS : (uint32_t)OE2_getTickMs();
+#ifdef OE_STANDALONE_BRIDGE
+      uint32_t stepMs = fast ? FAST_TICK_MS : (uint32_t)OE_getTickMs();
 #else
       uint32_t stepMs = fast ? FAST_TICK_MS : TICK_MS;
 #endif

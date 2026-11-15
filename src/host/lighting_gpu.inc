@@ -128,7 +128,7 @@ static void gpuPack(int index,const Surface *s,uint32_t colour,int column){
   flags|=(axis?64:0)|(unsigned)(delta+1);
  }
  gpuZNA[index]=z|(normal<<16)|(flags<<24);
-#ifdef OE2_QA_INTERACTIONS
+#ifdef OE_QA_INTERACTIONS
  if(costMode==4)return;
 #endif
  gpuMarkReceiver(gpuXY[index],gpuZNA[index],column,index/width);
@@ -142,7 +142,7 @@ const uint32_t *BrewLight_gpu(const uint32_t *original,int w,int h){
   free(gpuColour);free(gpuXY);free(gpuZNA);gpuColour=c;gpuXY=xy;gpuZNA=zna;gpuCapacity=pixels;
  }
  if(!gpuInitialized){memset(gpuShadows,0xff,sizeof(gpuShadows));gpuInitialized=1;gpuShadowRevision++;}
-#ifdef OE2_QA_INTERACTIONS
+#ifdef OE_QA_INTERACTIONS
  double started=emscripten_get_now();
 #endif
  int shift=staffShift();memset(cornerCache,0,sizeof(cornerCache));memset(gpuVisited,0,sizeof(gpuVisited));
@@ -150,7 +150,7 @@ const uint32_t *BrewLight_gpu(const uint32_t *original,int w,int h){
  memset(gpuContactColumns,0,sizeof(gpuContactColumns));memset(gpuContactRows,0,sizeof(gpuContactRows));
  memset(gpuNearColumns,0,sizeof(gpuNearColumns));
  gather(renderer);traceActive=1;
-#ifdef OE2_QA_INTERACTIONS
+#ifdef OE_QA_INTERACTIONS
  profile[0]=emscripten_get_now()-started;double packed=emscripten_get_now();
  profile[3]=numLights;profile[4]=0;for(int j=0;j<numLights;j++)profile[4]+=casterCount[j];
 #endif
@@ -176,7 +176,7 @@ const uint32_t *BrewLight_gpu(const uint32_t *original,int w,int h){
   p[8]=w*.5f+(dx*rx+dy*ry)*w/(2*depth);p[9]=h*.5f-(l->z-renderer->viewZ)*w/(2*depth);
   p[10]=clampf(w*5.5f/depth,1.5f*w/176.f,12.f*w/176.f);p[11]=.008f*l->power*flicker*weight*gpuParams[3]*gpuParams[3];
  }
-#ifdef OE2_QA_INTERACTIONS
+#ifdef OE_QA_INTERACTIONS
  profile[1]=emscripten_get_now()-packed;profile[2]=0;
 #endif
  traceActive=0;return gpuColour;
@@ -189,7 +189,7 @@ unsigned BrewLight_gpuShadowRevision(void){return gpuShadowRevision;}
 const uint32_t *BrewLight_gpuContact(void){return gpuContact;}
 unsigned BrewLight_gpuContactRevision(void){return gpuContactRevision;}
 
-#ifdef OE2_QA_INTERACTIONS
+#ifdef OE_QA_INTERACTIONS
 /* Independent CPU execution of the byte-texture contract for pixel comparisons
  * with both the existing renderer and a real WebGL/Godot shader. Never shipped. */
 static float gpuTestVisibility(int x,int y,int z,int light,int sprites){

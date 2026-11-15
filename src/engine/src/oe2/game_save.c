@@ -9,7 +9,7 @@
  */
 
 #include "game.h"
-#ifdef OE2_STANDALONE_BRIDGE
+#ifdef OE_STANDALONE_BRIDGE
 #include "standalone_bridge.h"
 #endif
 
@@ -625,8 +625,8 @@ int Game_loadConfig(Game *x)
 
 	if (!App_isConfigValid()) {
 		Game_deleteSaveFiles();
-#ifdef OE2_STANDALONE_BRIDGE
-		OE2_loadHostConfig();
+#ifdef OE_STANDALONE_BRIDGE
+		OE_loadHostConfig();
 #endif
 		return 0;
 	}
@@ -659,8 +659,8 @@ int Game_loadConfig(Game *x)
 		}
 	}
 	InputStream_dtor(&stream, 0);
-#ifdef OE2_STANDALONE_BRIDGE
-	OE2_loadHostConfig();
+#ifdef OE_STANDALONE_BRIDGE
+	OE_loadHostConfig();
 #endif
 	return ok;
 }
@@ -699,8 +699,8 @@ void Game_saveConfig(Game *game)
 			Resource_dispose(&os);
 	}
 	OutputStream_dtor(&os, 0);
-#ifdef OE2_STANDALONE_BRIDGE
-	OE2_saveHostConfig();
+#ifdef OE_STANDALONE_BRIDGE
+	OE_saveHostConfig();
 #endif
 }
 

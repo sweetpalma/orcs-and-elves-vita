@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <string.h>
 
-#ifdef OE2_STANDALONE_BRIDGE
+#ifdef OE_STANDALONE_BRIDGE
 #include "standalone_bridge.h"
 
 int Options_count(void) {
@@ -13,13 +13,13 @@ int Options_count(void) {
 void Options_row(int i, char *label, char *value) {
 	if (i == 0) {
 		strcpy(label, "Lighting:");
-		strcpy(value, OE2_isRemastered() ? "On" : "Off");
+		strcpy(value, OE_isRemastered() ? "On" : "Off");
 	}
 }
 
 int Options_select(int i) {
 	if (i == 0) {
-		OE2_toggleRemastered();
+		OE_toggleRemastered();
 		return 1;
 	}
 	return 0;

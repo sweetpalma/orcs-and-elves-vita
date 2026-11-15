@@ -489,10 +489,10 @@ uint32_t GETUPTIMEMS(void) { return Plat_uptimeMs(); }
 void GETRAND(uint8_t *buf, int n)
 {
 	/* BREW's GETRAND is a hardware/OS source; any good PRNG is equivalent here.
-	 * OE2_SEED=N (developer use) seeds it with a fixed value so headless runs are reproducible. */
+	 * OE_SEED=N (developer use) seeds it with a fixed value so headless runs are reproducible. */
 	static uint64_t s = 0;
 	if (!s) {
-		const char *seed = getenv("OE2_SEED");
+		const char *seed = getenv("OE_SEED");
 		if (seed)
 			s = 0x9E3779B97F4A7C15ull ^ strtoull(seed, NULL, 0);
 		else
