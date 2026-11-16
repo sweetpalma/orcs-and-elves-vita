@@ -1329,6 +1329,17 @@ typedef struct {
 } RoomDistCache;
 static RoomDistCache roomDistCache;
 #endif
+#if defined(GAME_OE1)
+static int gayaHubActive = 0;
+
+static inline int gayaEmitterGroup(int tile) {
+  if (tile == 165)
+    return 1; /* Healing Crystal: merge all into central pool */
+  if (tile == 20 || tile == 191)
+    return 2; /* Gaya dragon: merge head + body */
+  return 0;
+}
+#endif
 static void gather(Render *r) {
 #ifdef OE_QA_INTERACTIONS
   profile[5] = profile[6] = 0;
@@ -1340,6 +1351,9 @@ static void gather(Render *r) {
     retainedMap = view->mapId;
     retainedCount = 0;
   }
+#if defined(GAME_OE1)
+  gayaHubActive = (view->mapId == 6008);
+#endif
   numLights = 0;
   for (int i = 0; i < 8; i++) {
     const Impact *impact = &impacts[i];
@@ -1371,8 +1385,54 @@ static void gather(Render *r) {
     const Source *p = sourceForSprite(s);
     if (!p)
       continue;
+    int tile = s->info & 255;
+#if defined(GAME_OE1)
+    int grp = gayaHubActive ? gayaEmitterGroup(tile) : 0;
+    if (grp && numStaticEmitters < 128 && numClusters < 64) {
+      float sx = (float)s->x, sy = (float)s->y, sz = s->z + p->height;
+      float mergeR = (grp == 1) ? 200.f : 350.f;
+      float mergeR2 = mergeR * mergeR;
+      int cid = -1;
+      for (int c = 0; c < numClusters; c++) {
+        if (clusters[c].tile != grp)
+          continue;
+        float cx = clusters[c].sumX / clusters[c].count;
+        float cy = clusters[c].sumY / clusters[c].count;
+        float dx = sx - cx, dy = sy - cy;
+        if (dx * dx + dy * dy <= mergeR2) {
+          cid = c;
+          break;
+        }
+      }
+      if (cid < 0) {
+        cid = numClusters++;
+        clusters[cid].tile = grp;
+        clusters[cid].src = p;
+        clusters[cid].sumX = sx;
+        clusters[cid].sumY = sy;
+        clusters[cid].sumZ = sz;
+        clusters[cid].count = 1;
+        clusters[cid].minKey = i;
+      } else {
+        clusters[cid].sumX += sx;
+        clusters[cid].sumY += sy;
+        clusters[cid].sumZ += sz;
+        clusters[cid].count++;
+        if (i < clusters[cid].minKey)
+          clusters[cid].minKey = i;
+      }
+      staticEmitters[numStaticEmitters].idx = i;
+      staticEmitters[numStaticEmitters].tile = grp;
+      staticEmitters[numStaticEmitters].src = p;
+      staticEmitters[numStaticEmitters].x = sx;
+      staticEmitters[numStaticEmitters].y = sy;
+      staticEmitters[numStaticEmitters].z = sz;
+      staticEmitters[numStaticEmitters].cluster = cid;
+      numStaticEmitters++;
+      continue;
+    }
+#endif
     if (!p->flicker && numStaticEmitters < 128 && numClusters < 64) {
-      int tile = s->info & 255;
       float sx = (float)s->x, sy = (float)s->y, sz = s->z + p->height;
       float mergeR =
           (tile == 165) ? 144.f : (p->radius >= 300.f ? 192.f : 96.f);
@@ -1416,8 +1476,18 @@ static void gather(Render *r) {
       numStaticEmitters++;
       continue;
     }
+    float radius = p->radius;
+    int flicker = p->flicker;
+#if defined(GAME_OE1)
+    if (gayaHubActive) {
+      flicker = 0;
+      if (tile == 145) {
+        radius = 220.f;
+      }
+    }
+#endif
     Light l = {(float)s->x, (float)s->y, s->z + p->height, p->r,       p->g,
-               p->b,        p->radius,   p->power,         p->flicker, i};
+               p->b,        radius,      p->power,         flicker,    i};
     candidate(l, processingX, processingY);
   }
   for (int c = 0; c < numClusters; c++) {
@@ -1437,108 +1507,64 @@ static void gather(Render *r) {
         bestY = staticEmitters[e].y;
       }
     }
-    float power =
-        p->power * (1.f + 0.12f * fminf((float)(clusters[c].count - 1), 3.f));
-    Light l = {bestX, bestY,     cz,    p->r,       p->g,
-               p->b,  p->radius, power, p->flicker, clusters[c].minKey};
-    candidate(l, processingX, processingY);
-  }
-#ifdef OE_NO_SPRITE_SHADOWS
-  if (staticCacheMap != view->mapId || staticCacheLines != r->numLines ||
-      staticCacheMapSprites != r->numMapSprites ||
-      staticCacheFlats != r->numFlats || staticCacheRender != r) {
-    staticCacheMap = view->mapId;
-    staticCacheLines = r->numLines;
-    staticCacheMapSprites = r->numMapSprites;
-    staticCacheFlats = r->numFlats;
-    staticCacheRender = r;
-    numWallCandleLines = 0;
-    wallCandleOverflow = 0;
-    for (int i = 0; i < r->numLines; i++) {
-      const Line *l = &r->lines[i];
-      if (l->texture == 61 || l->texture == 69 || LINE_TEX2(l) == 61 ||
-          LINE_TEX2(l) == 69) {
-        if (numWallCandleLines < 256)
-          wallCandleLines[numWallCandleLines++] = i;
-        else
-          wallCandleOverflow = 1;
+    float radius = p->radius;
+    float power = p->power;
+    int flicker = p->flicker;
+#if defined(GAME_OE1)
+    if (gayaHubActive) {
+      flicker = 0;
+      int grp = clusters[c].tile;
+      if (grp == 1) { /* Crystals */
+        radius = 280.f;
+        power = 2.4f;
+      } else if (grp == 2) { /* Gaya */
+        radius = 380.f;
+        power = 2.8f;
       }
-    }
-    numSpriteCandles = 0;
-    spriteCandleOverflow = 0;
-    for (int i = 0; i < r->numMapSprites; i++) {
-      int tile = r->sprites[i].info & 255;
-      if (tile == 61 || tile == 69) {
-        if (numSpriteCandles < 64)
-          spriteCandles[numSpriteCandles++] = i;
-        else
-          spriteCandleOverflow = 1;
-      }
-    }
-    numLavaTiles = 0;
-    const uint16_t *lavaFlat = NULL;
-    for (int slot = 0; slot < r->numFlats; slot++)
-      if (r->flatIds[slot] == 199) {
-        lavaFlat = RENDER_FLAT_PTR(r, slot);
-        break;
-      }
-    if (lavaFlat)
-      for (int i = 0; i < 1024; i++)
-        if (RENDER_FLOOR_TILE(r, i) == lavaFlat)
-          lavaTiles[numLavaTiles++] = (uint16_t)i;
-  }
-  if (!wallCandleOverflow) {
-    for (int k = 0; k < numWallCandleLines; k++) {
-      int i = wallCandleLines[k];
-      wallCandles(r, &r->lines[i], 10000 + i * 256, 0);
-    }
-  } else {
-    for (int i = 0; i < r->numLines; i++) {
-      const Line *l = &r->lines[i];
-      if (l->texture == 61 || l->texture == 69 || LINE_TEX2(l) == 61 ||
-          LINE_TEX2(l) == 69)
-        wallCandles(r, l, 10000 + i * 256, 0);
-    }
-  }
-  if (!spriteCandleOverflow) {
-    for (int k = 0; k < numSpriteCandles; k++) {
-      int i = spriteCandles[k];
-      spriteWallCandle(r, &r->sprites[i], 300000 + i * 256);
-    }
-  } else {
-    for (int i = 0; i < r->numMapSprites; i++)
-      spriteWallCandle(r, &r->sprites[i], 300000 + i * 256);
-  }
-  for (int k = 0; k < numLavaTiles; k++) {
-    int i = lavaTiles[k];
-    Light l = {(i % 32) * 64.f + 32,
-               (i / 32) * 64.f + 32,
-               RENDER_FLOOR(r) + 4.f,
-               1,
-               .25f,
-               .04f,
-               160,
-               1.0f,
-               1,
-               1000 + i};
-    candidate(l, processingX, processingY);
-  }
-#else
-#ifdef OE_QA_INTERACTIONS
-  if (wallCandlesEnabled)
+    } else
 #endif
-  {
-    for (int i = 0; i < r->numLines; i++) {
-      const Line *l = &r->lines[i];
-      if (l->texture == 61 || l->texture == 69 || LINE_TEX2(l) == 61 ||
-          LINE_TEX2(l) == 69)
-        wallCandles(r, l, 10000 + i * 256, 0);
+    {
+      power =
+          p->power * (1.f + 0.12f * fminf((float)(clusters[c].count - 1), 3.f));
     }
-    for (int i = 0; i < r->numMapSprites; i++)
-      spriteWallCandle(r, &r->sprites[i], 300000 + i * 256);
+    Light l = {bestX, bestY,     cz,    p->r,       p->g,
+    p->b, radius, power, flicker, clusters[c].minKey
+  };
+  candidate(l, processingX, processingY);
+}
+#ifdef OE_NO_SPRITE_SHADOWS
+if (staticCacheMap != view->mapId || staticCacheLines != r->numLines ||
+    staticCacheMapSprites != r->numMapSprites ||
+    staticCacheFlats != r->numFlats || staticCacheRender != r) {
+  staticCacheMap = view->mapId;
+  staticCacheLines = r->numLines;
+  staticCacheMapSprites = r->numMapSprites;
+  staticCacheFlats = r->numFlats;
+  staticCacheRender = r;
+  numWallCandleLines = 0;
+  wallCandleOverflow = 0;
+  for (int i = 0; i < r->numLines; i++) {
+    const Line *l = &r->lines[i];
+    if (l->texture == 61 || l->texture == 69 || LINE_TEX2(l) == 61 ||
+        LINE_TEX2(l) == 69) {
+      if (numWallCandleLines < 256)
+        wallCandleLines[numWallCandleLines++] = i;
+      else
+        wallCandleOverflow = 1;
+    }
   }
-  /* Original molten-crack flat 199 is emissive only where that material occurs.
-   */
+  numSpriteCandles = 0;
+  spriteCandleOverflow = 0;
+  for (int i = 0; i < r->numMapSprites; i++) {
+    int tile = r->sprites[i].info & 255;
+    if (tile == 61 || tile == 69) {
+      if (numSpriteCandles < 64)
+        spriteCandles[numSpriteCandles++] = i;
+      else
+        spriteCandleOverflow = 1;
+    }
+  }
+  numLavaTiles = 0;
   const uint16_t *lavaFlat = NULL;
   for (int slot = 0; slot < r->numFlats; slot++)
     if (r->flatIds[slot] == 199) {
@@ -1547,316 +1573,379 @@ static void gather(Render *r) {
     }
   if (lavaFlat)
     for (int i = 0; i < 1024; i++)
-      if (RENDER_FLOOR_TILE(r, i) == lavaFlat) {
-        Light l = {(i % 32) * 64.f + 32,
-                   (i / 32) * 64.f + 32,
-                   RENDER_FLOOR(r) + 4.f,
-                   1,
-                   .25f,
-                   .04f,
-                   160,
-                   1.0f,
-                   1,
-                   1000 + i};
-        candidate(l, processingX, processingY);
-      }
-#endif
-  for (int i = 0; i < numLights; i++)
-    for (int j = i + 1; j < numLights; j++)
-      if (lights[j].key < lights[i].key) {
-        Light a = lights[i];
-        lights[i] = lights[j];
-        lights[j] = a;
-      }
-  retainedCount = numLights;
-  for (int i = 0; i < retainedCount; i++)
-    retainedKeys[i] = lights[i].key;
-  Player *p = g_app->player;
-  Canvas *c = g_app->canvas;
-  float a = (c->viewAngle & 1023) * (6.28318530718f / 1024);
-#if defined(GAME_OE1)
-  Light l = {c->viewX + cosf(a) * 14,
-             c->viewY - sinf(a) * 14,
-             c->viewZ - 5.f,
-             1,
-             .62f,
-             .28f,
-             160,
-             .62f,
-             0,
-             2000};
-#else
-  Light l = {c->viewX + cosf(a) * 14,
-             c->viewY - sinf(a) * 14,
-             c->viewZ - 5.f,
-             1,
-             .62f,
-             .28f,
-             105,
-             .28f,
-             0,
-             2000};
-#endif
-  if (p && p->weapons) {
-    int w = p->ce.weapon;
-#if defined(GAME_OE1)
-    if (w == 2 || w == 5 || w == 7) {
-      /* Flaming Sword (w=2), Heavy Crossbow (w=5), Phoenix Eggs (w=7): warm orange firelight */
-      l.r = 1.f;
-      l.g = .38f;
-      l.b = .08f;
-      l.radius = 210;
-      l.power = 1.15f;
-    } else if (w == 3) {
-      /* Vorpal Sword (w=3): vibrant enchanted blue light */
-      l.r = .25f;
-      l.g = .55f;
-      l.b = 1.f;
-      l.radius = 210;
-      l.power = 1.15f;
-    } else if (w >= 8) {
-      l.radius = 210;
-      l.power = .86f;
-      if (w == 8) {
-        l.r = 1;
-        l.g = .18f;
-        l.b = .10f;
-      } else if (w == 9) {
-        l.r = .25f;
-        l.g = 1;
-        l.b = .35f;
-      } else if (w == 10) {
-        l.r = .35f;
-        l.g = .65f;
-        l.b = 1;
-      }
-    }
-#else
-    if (w == 5 || w == 6 || w == 7) {
-      l.r = 1;
-      l.g = .38f;
-      l.b = .08f;
-      l.radius = 210;
-      l.power = 1.15f;
-    } else if (w >= 8) {
-      l.radius = 210;
-      l.power = .86f;
-      if (w == 8) {
-        l.r = 1;
-        l.g = .18f;
-        l.b = .10f;
-      } else if (w == 9) {
-        l.r = .25f;
-        l.g = 1;
-        l.b = .35f;
-      } else if (w == 10) {
-        l.r = .35f;
-        l.g = .65f;
-        l.b = 1;
-      }
-    }
-#endif
+      if (RENDER_FLOOR_TILE(r, i) == lavaFlat)
+        lavaTiles[numLavaTiles++] = (uint16_t)i;
+}
+if (!wallCandleOverflow) {
+  for (int k = 0; k < numWallCandleLines; k++) {
+    int i = wallCandleLines[k];
+    wallCandles(r, &r->lines[i], 10000 + i * 256, 0);
   }
-  l.radius *= LIGHT_REFERENCE_SCALE;
-  lights[numLights++] = l;
-  uint32_t h = 2166136261u;
+} else {
   for (int i = 0; i < r->numLines; i++) {
-    Line *l = &r->lines[i];
-    h = hashWord(h, (uint32_t)l->x1);
-    h = hashWord(h, (uint32_t)l->y1);
-    h = hashWord(h, (uint32_t)l->x2);
-    h = hashWord(h, (uint32_t)l->y2);
-    h = hashWord(h, l->flags & (HIDDEN | NO_DEPTH | 0xc0010000u));
+    const Line *l = &r->lines[i];
+    if (l->texture == 61 || l->texture == 69 || LINE_TEX2(l) == 61 ||
+        LINE_TEX2(l) == 69)
+      wallCandles(r, l, 10000 + i * 256, 0);
   }
-  h = hashWord(h, (uint32_t)RENDER_FLOOR(r));
-  h = hashWord(h, (uint32_t)RENDER_CEIL(r));
-  h = hashWord(h, (uint32_t)r->floorHeight);
-  h = hashWord(h, (uint32_t)r->ceilHeight);
-  if (h != geometryHash) {
-    geometryHash = h;
-#ifdef OE_NO_SPRITE_SHADOWS
-    memset((void *)wallCheckedAtomic, 0, sizeof(wallCheckedAtomic));
-    memset(wallLightHash, 0, sizeof(wallLightHash));
+}
+if (!spriteCandleOverflow) {
+  for (int k = 0; k < numSpriteCandles; k++) {
+    int i = spriteCandles[k];
+    spriteWallCandle(r, &r->sprites[i], 300000 + i * 256);
+  }
+} else {
+  for (int i = 0; i < r->numMapSprites; i++)
+    spriteWallCandle(r, &r->sprites[i], 300000 + i * 256);
+}
+for (int k = 0; k < numLavaTiles; k++) {
+  int i = lavaTiles[k];
+  Light l = {(i % 32) * 64.f + 32,
+             (i / 32) * 64.f + 32,
+             RENDER_FLOOR(r) + 4.f,
+             1,
+             .25f,
+             .04f,
+             160,
+             1.0f,
+             1,
+             1000 + i};
+  candidate(l, processingX, processingY);
+}
 #else
-    roomDistCache.valid = 0;
-    memset(wallChecked, 0, sizeof(wallChecked));
+#ifdef OE_QA_INTERACTIONS
+if (wallCandlesEnabled)
 #endif
-    buildTraceGrid(r);
+{
+  for (int i = 0; i < r->numLines; i++) {
+    const Line *l = &r->lines[i];
+    if (l->texture == 61 || l->texture == 69 || LINE_TEX2(l) == 61 ||
+        LINE_TEX2(l) == 69)
+      wallCandles(r, l, 10000 + i * 256, 0);
   }
+  for (int i = 0; i < r->numMapSprites; i++)
+    spriteWallCandle(r, &r->sprites[i], 300000 + i * 256);
+}
+/* Original molten-crack flat 199 is emissive only where that material occurs.
+ */
+const uint16_t *lavaFlat = NULL;
+for (int slot = 0; slot < r->numFlats; slot++)
+  if (r->flatIds[slot] == 199) {
+    lavaFlat = RENDER_FLAT_PTR(r, slot);
+    break;
+  }
+if (lavaFlat)
+  for (int i = 0; i < 1024; i++)
+    if (RENDER_FLOOR_TILE(r, i) == lavaFlat) {
+      Light l = {(i % 32) * 64.f + 32,
+                 (i / 32) * 64.f + 32,
+                 RENDER_FLOOR(r) + 4.f,
+                 1,
+                 .25f,
+                 .04f,
+                 160,
+                 1.0f,
+                 1,
+                 1000 + i};
+      candidate(l, processingX, processingY);
+    }
+#endif
+for (int i = 0; i < numLights; i++)
+  for (int j = i + 1; j < numLights; j++)
+    if (lights[j].key < lights[i].key) {
+      Light a = lights[i];
+      lights[i] = lights[j];
+      lights[j] = a;
+    }
+retainedCount = numLights;
+for (int i = 0; i < retainedCount; i++)
+  retainedKeys[i] = lights[i].key;
+Player *p = g_app->player;
+Canvas *c = g_app->canvas;
+float a = (c->viewAngle & 1023) * (6.28318530718f / 1024);
+#if defined(GAME_OE1)
+Light l = {c->viewX + cosf(a) * 14,
+           c->viewY - sinf(a) * 14,
+           c->viewZ - 5.f,
+           1,
+           .62f,
+           .28f,
+           160,
+           .62f,
+           0,
+           2000};
+#else
+Light l = {c->viewX + cosf(a) * 14,
+           c->viewY - sinf(a) * 14,
+           c->viewZ - 5.f,
+           1,
+           .62f,
+           .28f,
+           105,
+           .28f,
+           0,
+           2000};
+#endif
+if (p && p->weapons) {
+  int w = p->ce.weapon;
+#if defined(GAME_OE1)
+  if (w == 2 || w == 5 || w == 7) {
+    /* Flaming Sword (w=2), Heavy Crossbow (w=5), Phoenix Eggs (w=7): warm
+     * orange firelight */
+    l.r = 1.f;
+    l.g = .38f;
+    l.b = .08f;
+    l.radius = 210;
+    l.power = 1.15f;
+  } else if (w == 3) {
+    /* Vorpal Sword (w=3): vibrant enchanted blue light */
+    l.r = .25f;
+    l.g = .55f;
+    l.b = 1.f;
+    l.radius = 210;
+    l.power = 1.15f;
+  } else if (w >= 8) {
+    l.radius = 210;
+    l.power = .86f;
+    if (w == 8) {
+      l.r = 1;
+      l.g = .18f;
+      l.b = .10f;
+    } else if (w == 9) {
+      l.r = .25f;
+      l.g = 1;
+      l.b = .35f;
+    } else if (w == 10) {
+      l.r = .35f;
+      l.g = .65f;
+      l.b = 1;
+    }
+  }
+#else
+  if (w == 5 || w == 6 || w == 7) {
+    l.r = 1;
+    l.g = .38f;
+    l.b = .08f;
+    l.radius = 210;
+    l.power = 1.15f;
+  } else if (w >= 8) {
+    l.radius = 210;
+    l.power = .86f;
+    if (w == 8) {
+      l.r = 1;
+      l.g = .18f;
+      l.b = .10f;
+    } else if (w == 9) {
+      l.r = .25f;
+      l.g = 1;
+      l.b = .35f;
+    } else if (w == 10) {
+      l.r = .35f;
+      l.g = .65f;
+      l.b = 1;
+    }
+  }
+#endif
+}
+l.radius *= LIGHT_REFERENCE_SCALE;
+lights[numLights++] = l;
+uint32_t h = 2166136261u;
+for (int i = 0; i < r->numLines; i++) {
+  Line *l = &r->lines[i];
+  h = hashWord(h, (uint32_t)l->x1);
+  h = hashWord(h, (uint32_t)l->y1);
+  h = hashWord(h, (uint32_t)l->x2);
+  h = hashWord(h, (uint32_t)l->y2);
+  h = hashWord(h, l->flags & (HIDDEN | NO_DEPTH | 0xc0010000u));
+}
+h = hashWord(h, (uint32_t)RENDER_FLOOR(r));
+h = hashWord(h, (uint32_t)RENDER_CEIL(r));
+h = hashWord(h, (uint32_t)r->floorHeight);
+h = hashWord(h, (uint32_t)r->ceilHeight);
+if (h != geometryHash) {
+  geometryHash = h;
 #ifdef OE_NO_SPRITE_SHADOWS
-  uint32_t targetWallHash[8] = {0};
-  unsigned char slotUsed[8] = {0};
-  for (int j = 0; j < numLights; j++) {
-    casterCount[j] = 0;
-    lightWallSlot[j] = -1;
-    if (lights[j].key == 2000) {
-      lightWallSlot[j] = 7;
-      continue;
-    }
-    uint32_t wallHash = hashWord(geometryHash, (uint32_t)lights[j].key);
-    wallHash = hashWord(wallHash, floatBits(lights[j].x));
-    wallHash = hashWord(wallHash, floatBits(lights[j].y));
-    wallHash = hashWord(wallHash, floatBits(lights[j].z));
-    targetWallHash[j] = wallHash;
-    for (int s = 0; s < 8; s++) {
-      if (!slotUsed[s] && wallLightHash[s] == wallHash && wallHash != 0) {
-        lightWallSlot[j] = s;
-        slotUsed[s] = 1;
-        break;
-      }
+  memset((void *)wallCheckedAtomic, 0, sizeof(wallCheckedAtomic));
+  memset(wallLightHash, 0, sizeof(wallLightHash));
+#else
+  roomDistCache.valid = 0;
+  memset(wallChecked, 0, sizeof(wallChecked));
+#endif
+  buildTraceGrid(r);
+}
+#ifdef OE_NO_SPRITE_SHADOWS
+uint32_t targetWallHash[8] = {0};
+unsigned char slotUsed[8] = {0};
+for (int j = 0; j < numLights; j++) {
+  casterCount[j] = 0;
+  lightWallSlot[j] = -1;
+  if (lights[j].key == 2000) {
+    lightWallSlot[j] = 7;
+    continue;
+  }
+  uint32_t wallHash = hashWord(geometryHash, (uint32_t)lights[j].key);
+  wallHash = hashWord(wallHash, floatBits(lights[j].x));
+  wallHash = hashWord(wallHash, floatBits(lights[j].y));
+  wallHash = hashWord(wallHash, floatBits(lights[j].z));
+  targetWallHash[j] = wallHash;
+  for (int s = 0; s < 8; s++) {
+    if (!slotUsed[s] && wallLightHash[s] == wallHash && wallHash != 0) {
+      lightWallSlot[j] = s;
+      slotUsed[s] = 1;
+      break;
     }
   }
-  for (int j = 0; j < numLights; j++) {
-    if (lightWallSlot[j] >= 0)
-      continue;
-    int pick = -1;
+}
+for (int j = 0; j < numLights; j++) {
+  if (lightWallSlot[j] >= 0)
+    continue;
+  int pick = -1;
+  for (int s = 0; s < 8; s++)
+    if (!slotUsed[s] && wallLightHash[s] == 0) {
+      pick = s;
+      break;
+    }
+  if (pick < 0)
     for (int s = 0; s < 8; s++)
-      if (!slotUsed[s] && wallLightHash[s] == 0) {
+      if (!slotUsed[s]) {
         pick = s;
         break;
       }
-    if (pick < 0)
-      for (int s = 0; s < 8; s++)
-        if (!slotUsed[s]) {
-          pick = s;
-          break;
-        }
-    if (pick < 0)
-      pick = j & 7;
-    slotUsed[pick] = 1;
-    lightWallSlot[j] = pick;
-    wallLightHash[pick] = targetWallHash[j];
-    uint32_t dirtyCount =
-        atomic_load_explicit(&numDirtyWallAtomic[pick], memory_order_relaxed);
-    uint16_t clearMask = (uint16_t)~(3u << (pick * 2));
-    if (dirtyCount <= MAX_DIRTY_WALL_CELLS) {
-      for (uint32_t k = 0; k < dirtyCount; k++) {
-        int cell = dirtyWallCells[pick][k];
-        uint16_t oldVal =
-            atomic_load_explicit(&wallVisState[cell], memory_order_relaxed);
+  if (pick < 0)
+    pick = j & 7;
+  slotUsed[pick] = 1;
+  lightWallSlot[j] = pick;
+  wallLightHash[pick] = targetWallHash[j];
+  uint32_t dirtyCount =
+      atomic_load_explicit(&numDirtyWallAtomic[pick], memory_order_relaxed);
+  uint16_t clearMask = (uint16_t)~(3u << (pick * 2));
+  if (dirtyCount <= MAX_DIRTY_WALL_CELLS) {
+    for (uint32_t k = 0; k < dirtyCount; k++) {
+      int cell = dirtyWallCells[pick][k];
+      uint16_t oldVal =
+          atomic_load_explicit(&wallVisState[cell], memory_order_relaxed);
+      atomic_store_explicit(&wallVisState[cell], (uint16_t)(oldVal & clearMask),
+                            memory_order_relaxed);
+    }
+  } else {
+    for (int cell = 0; cell < GRID_CELLS; cell++) {
+      uint16_t oldVal =
+          atomic_load_explicit(&wallVisState[cell], memory_order_relaxed);
+      if ((oldVal & (3u << (pick * 2))) != 0)
         atomic_store_explicit(&wallVisState[cell],
                               (uint16_t)(oldVal & clearMask),
                               memory_order_relaxed);
-      }
-    } else {
-      for (int cell = 0; cell < GRID_CELLS; cell++) {
-        uint16_t oldVal =
-            atomic_load_explicit(&wallVisState[cell], memory_order_relaxed);
-        if ((oldVal & (3u << (pick * 2))) != 0)
-          atomic_store_explicit(&wallVisState[cell],
-                                (uint16_t)(oldVal & clearMask),
-                                memory_order_relaxed);
-      }
     }
-    atomic_store_explicit(&numDirtyWallAtomic[pick], 0u, memory_order_relaxed);
   }
-  for (int i = 0; i < numLights; i++) {
-    h = hashWord(h, (uint32_t)lights[i].key);
-    h = hashWord(h, (uint32_t)(int)(lights[i].x / 16));
-    h = hashWord(h, (uint32_t)(int)(lights[i].y / 16));
-    h = hashWord(h, (uint32_t)(int)(lights[i].z / 8));
-  }
-  cachedHash = h;
+  atomic_store_explicit(&numDirtyWallAtomic[pick], 0u, memory_order_relaxed);
+}
+for (int i = 0; i < numLights; i++) {
+  h = hashWord(h, (uint32_t)lights[i].key);
+  h = hashWord(h, (uint32_t)(int)(lights[i].x / 16));
+  h = hashWord(h, (uint32_t)(int)(lights[i].y / 16));
+  h = hashWord(h, (uint32_t)(int)(lights[i].z / 8));
+}
+cachedHash = h;
 #else
-  for (int j = 0; j < numLights; j++) {
+for (int j = 0; j < numLights; j++) {
 #ifndef OE_QA_INTERACTIONS
-    if (lights[j].key == 2000) {
-      casterCount[j] = 0;
-      continue;
-    }
-#endif
-    uint32_t wallHash = hashWord(geometryHash, (uint32_t)lights[j].key);
-    wallHash = hashWord(wallHash, floatBits(lights[j].x));
-    wallHash = hashWord(wallHash, floatBits(lights[j].y));
-    wallHash = hashWord(wallHash, floatBits(lights[j].z));
-    if (wallHash != wallLightHash[j]) {
-      wallLightHash[j] = wallHash;
-      if (numDirtyWall[j] <= MAX_DIRTY_WALL_BYTES) {
-        for (int k = 0; k < numDirtyWall[j]; k++)
-          wallSampleReady[j][dirtyWallBytes[j][k]] = 0;
-      } else
-        memset(wallSampleReady[j], 0, sizeof(wallSampleReady[j]));
-      numDirtyWall[j] = 0;
-    }
-  }
-  static int activeCasterList[800];
-  int numActiveCasters = 0;
-  for (int i = 0; i < r->numSprites && i < 800; i++) {
-    casters[i] = spriteCaster(r, &r->sprites[i]);
-    if (casters[i].active && posedCasters[i].active)
-      casters[i] = posedCasters[i];
-    if (casters[i].active)
-      activeCasterList[numActiveCasters++] = i;
-  }
-  unsigned invalidMask = 0;
-  for (int j = 0; j < numLights; j++) {
+  if (lights[j].key == 2000) {
     casterCount[j] = 0;
-#ifndef OE_QA_INTERACTIONS
-    if (lights[j].key == 2000)
-      continue;
+    continue;
+  }
 #endif
-    uint32_t lh = wallLightHash[j];
-    lh = hashWord(lh, (uint32_t)(int)(lights[j].x / 16));
-    lh = hashWord(lh, (uint32_t)(int)(lights[j].y / 16));
-    lh = hashWord(lh, (uint32_t)(int)(lights[j].z / 8));
-    for (int k = 0; k < numActiveCasters; k++) {
-      int i = activeCasterList[k];
-      Caster *c = &casters[i];
-      float dx = c->x - lights[j].x, dy = c->y - lights[j].y,
-            range = lights[j].radius + c->size;
-      if (dx * dx + dy * dy > range * range)
-        continue;
-      lightCasters[j][casterCount[j]++] = i;
-      lh = hashWord(lh, (unsigned)i);
-      lh = hashWord(lh, (unsigned)(int)c->x);
-      lh = hashWord(lh, (unsigned)(int)c->y);
-      lh = hashWord(lh, (unsigned)(int)c->z);
-      lh = hashWord(lh, (unsigned)c->frame);
-      lh = hashWord(lh, (unsigned)(int)(c->size * 16));
-      lh = hashWord(lh, c->flags);
-      h = hashWord(h, (unsigned)i);
-      h = hashWord(h, (unsigned)(int)c->x);
-      h = hashWord(h, (unsigned)(int)c->y);
-      h = hashWord(h, (unsigned)(int)c->z);
-      h = hashWord(h, (unsigned)c->frame);
-      h = hashWord(h, (unsigned)(int)(c->size * 16));
-      h = hashWord(h, c->flags);
-    }
-    if (lh != lightCacheHash[j]) {
-      lightCacheHash[j] = lh;
-      invalidMask |= 1u << j;
-    }
+  uint32_t wallHash = hashWord(geometryHash, (uint32_t)lights[j].key);
+  wallHash = hashWord(wallHash, floatBits(lights[j].x));
+  wallHash = hashWord(wallHash, floatBits(lights[j].y));
+  wallHash = hashWord(wallHash, floatBits(lights[j].z));
+  if (wallHash != wallLightHash[j]) {
+    wallLightHash[j] = wallHash;
+    if (numDirtyWall[j] <= MAX_DIRTY_WALL_BYTES) {
+      for (int k = 0; k < numDirtyWall[j]; k++)
+        wallSampleReady[j][dirtyWallBytes[j][k]] = 0;
+    } else
+      memset(wallSampleReady[j], 0, sizeof(wallSampleReady[j]));
+    numDirtyWall[j] = 0;
   }
-  for (int j = numLights; j < 8; j++)
-    if (lightCacheHash[j]) {
-      lightCacheHash[j] = 0;
-      invalidMask |= 1u << j;
-    }
-  for (int i = 0; i < numLights; i++) {
-    h = hashWord(h, (uint32_t)lights[i].key);
-    h = hashWord(h, (uint32_t)(int)(lights[i].x / 16));
-    h = hashWord(h, (uint32_t)(int)(lights[i].y / 16));
-    h = hashWord(h, (uint32_t)(int)(lights[i].z / 8));
+}
+static int activeCasterList[800];
+int numActiveCasters = 0;
+for (int i = 0; i < r->numSprites && i < 800; i++) {
+  casters[i] = spriteCaster(r, &r->sprites[i]);
+  if (casters[i].active && posedCasters[i].active)
+    casters[i] = posedCasters[i];
+  if (casters[i].active)
+    activeCasterList[numActiveCasters++] = i;
+}
+unsigned invalidMask = 0;
+for (int j = 0; j < numLights; j++) {
+  casterCount[j] = 0;
+#ifndef OE_QA_INTERACTIONS
+  if (lights[j].key == 2000)
+    continue;
+#endif
+  uint32_t lh = wallLightHash[j];
+  lh = hashWord(lh, (uint32_t)(int)(lights[j].x / 16));
+  lh = hashWord(lh, (uint32_t)(int)(lights[j].y / 16));
+  lh = hashWord(lh, (uint32_t)(int)(lights[j].z / 8));
+  for (int k = 0; k < numActiveCasters; k++) {
+    int i = activeCasterList[k];
+    Caster *c = &casters[i];
+    float dx = c->x - lights[j].x, dy = c->y - lights[j].y,
+          range = lights[j].radius + c->size;
+    if (dx * dx + dy * dy > range * range)
+      continue;
+    lightCasters[j][casterCount[j]++] = i;
+    lh = hashWord(lh, (unsigned)i);
+    lh = hashWord(lh, (unsigned)(int)c->x);
+    lh = hashWord(lh, (unsigned)(int)c->y);
+    lh = hashWord(lh, (unsigned)(int)c->z);
+    lh = hashWord(lh, (unsigned)c->frame);
+    lh = hashWord(lh, (unsigned)(int)(c->size * 16));
+    lh = hashWord(lh, c->flags);
+    h = hashWord(h, (unsigned)i);
+    h = hashWord(h, (unsigned)(int)c->x);
+    h = hashWord(h, (unsigned)(int)c->y);
+    h = hashWord(h, (unsigned)(int)c->z);
+    h = hashWord(h, (unsigned)c->frame);
+    h = hashWord(h, (unsigned)(int)(c->size * 16));
+    h = hashWord(h, c->flags);
   }
-  cachedHash = h;
-  if (invalidMask) {
-    if (numDirtyChecked <= MAX_DIRTY_CELLS) {
-      int kept = 0;
-      unsigned char keepMask = (unsigned char)~invalidMask;
-      for (int k = 0; k < numDirtyChecked; k++) {
-        int cell = dirtyCheckedCells[k];
-        unsigned char rem = checked[cell] & keepMask;
-        checked[cell] = rem;
-        if (rem)
-          dirtyCheckedCells[kept++] = cell;
-      }
-      numDirtyChecked = kept;
-    } else {
-      memset(checked, 0, sizeof(checked));
-      numDirtyChecked = 0;
-      memset(lightCacheHash, 0, sizeof(lightCacheHash));
-    }
+  if (lh != lightCacheHash[j]) {
+    lightCacheHash[j] = lh;
+    invalidMask |= 1u << j;
   }
+}
+for (int j = numLights; j < 8; j++)
+  if (lightCacheHash[j]) {
+    lightCacheHash[j] = 0;
+    invalidMask |= 1u << j;
+  }
+for (int i = 0; i < numLights; i++) {
+  h = hashWord(h, (uint32_t)lights[i].key);
+  h = hashWord(h, (uint32_t)(int)(lights[i].x / 16));
+  h = hashWord(h, (uint32_t)(int)(lights[i].y / 16));
+  h = hashWord(h, (uint32_t)(int)(lights[i].z / 8));
+}
+cachedHash = h;
+if (invalidMask) {
+  if (numDirtyChecked <= MAX_DIRTY_CELLS) {
+    int kept = 0;
+    unsigned char keepMask = (unsigned char)~invalidMask;
+    for (int k = 0; k < numDirtyChecked; k++) {
+      int cell = dirtyCheckedCells[k];
+      unsigned char rem = checked[cell] & keepMask;
+      checked[cell] = rem;
+      if (rem)
+        dirtyCheckedCells[kept++] = cell;
+    }
+    numDirtyChecked = kept;
+  } else {
+    memset(checked, 0, sizeof(checked));
+    numDirtyChecked = 0;
+    memset(lightCacheHash, 0, sizeof(lightCacheHash));
+  }
+}
 #endif
 }
 static float visibilityAt(int ix, int iy, int iz, int light, int sprites) {
@@ -2436,6 +2525,12 @@ static void incidentEnergyCtx(const Surface *s, const float *flicker,
     if (kind != 4 && l->key != 2000) {
       if (kind == 3 && d < 48.f) {
         /* Direct illumination from emitter sprite's own light source */
+#if defined(GAME_OE1)
+      } else if (gayaHubActive) {
+        /* Gaya's cavern is an open chamber with no interior occluders;
+         * use direct distance attenuation and contact shade (AO). */
+        e *= shadowScale;
+#endif
       } else {
         if (!sc.init)
           initShadowCoord(s, sx, sy, sz, snz, &sc);
@@ -2509,6 +2604,10 @@ static void incidentEnergy(const Surface *s, const float *flicker, int column,
     if (kind != 4 && l->key != 2000) {
       if (kind == 3 && d < 48.f) {
         /* Direct illumination from emitter sprite's own light source */
+#if defined(GAME_OE1)
+      } else if (gayaHubActive) {
+        e *= (.75f + .25f * ao);
+#endif
       } else {
         e *= shadow(s, j, column) * (.75f + .25f * ao);
       }
@@ -3695,6 +3794,10 @@ static const uint32_t *present(const uint32_t *original, int w, int h,
   if (lighting) {
 #ifndef OE_NO_SPRITE_SHADOWS
     memset(cornerCache, 0, (size_t)w * sizeof(cornerCache[0]));
+#endif
+#if defined(GAME_OE1)
+    if (g_app && g_app->canvas && g_app->canvas->mapId != 6008)
+      gayaHubActive = 0;
 #endif
     gather(renderer);
     for (int j = 0; j < numLights; j++) {

@@ -221,15 +221,30 @@ Lighting values are evaluated in linear radiometric units and mapped to display 
 
 ## 8. Multi-Game Considerations & Known Visual Trade-offs
 
-### 8.1. High Emitter Density in Gaya's Hub (OE1 Map 9)
 
-In Orcs & Elves I (`Map 9: Dragon's Lair` / Gaya's hub), the map contains an exceptionally high concentration of dynamic light emitters:
-- **10 Healing Crystals** (Tile `165`, radius `450`, power `1.4`).
-- **8 Fire Portals** (Tile `145`, radius `200`, power `1.6`).
-- **8 Torchieres** (Tile `136`, radius `240`, power `2.0`).
+### 8.1. High Emitter Density & Static Lighting Optimization in Gaya's Hub (OE1 Map 9)
+
+  In Orcs & Elves I (`Map 9: Dragon's Lair` / Gaya's hub, `MAP_GAYA = 6008`), the map contains an exceptionally high concentration of dynamic light emitters in a single cavern:
+- **10 Healing Crystals** (Tile `165`).
+- **8 Fire Portals** (Tile `145`).
+- **8 Torchieres / Wall Sconces** (Tiles `116`, `136`, `185`).
 - **Gaya Dragon Body & Head** (Tiles `20` and `191`).
 
-Because the lighting engine caps active world lights to **7 slots** per frame for real-time performance on the PS Vita:
-- **Rear-Camera Directional Culling:** When the player stands near the central crystal cluster facing Gaya, the crystals fall behind the camera (`forward < 0`). Under `selectionScore`, lights behind the camera receive up to a 10x penalty (`dirWeight = 1.0 + 4.0 * (-forward / 128.0)`).
-- **Result:** The crystals behind the player are culled in favor of forward lights (Gaya's flame, portal braziers, and wall torchieres in front). As a result, the ambient blue illumination cast by the crystals onto forward walls can noticeably drop out when turning away from them.
-- **Tuning Consideration:** To reduce GPU/CPU load in the hub while mitigating popping, the crystal radius and intensity can be dampened or clustered into a unified central emitter.
+  Previously, this density severely degraded frame rate on low-power devices like the PS Vita because:
+
+1. Candidate emitters thrash the active 7-light budget on camera rotations, dirtying shadow caster tables and wall visibility caches.
+2. Animated sprites (Gaya breathing, swirling portals, crystal shimmer) continually alter unlit framebuffer hashes (`sig`), completely defeating stationary frame reuse caches.
+3. Torches and portals had active flicker enabled (`flicker = 1`), preventing static light clustering and forcing continuous recalculation.
+
+#### Static Lighting Architecture in Gaya's Hub
+
+Because Gaya's Hub is a peaceful location with no weapon swinging or combat and static geometry:
+
+1. **Selective Static Emitter Consolidation (`gayaHubActive`):**
+   - The 10 Healing Crystals placed atop each other in the central fountain are merged into 1 unified crystal cluster (`mergeR = 200`, `radius = 280`, `power = 2.4`).
+   - Gaya dragon's head and body are merged into 1 central dragon flame cluster (`mergeR = 350`, `radius = 380`, `power = 2.8`).
+   - The 8 Fire Portals (tile `145`) and wall torchieres retain their own independent emitters centered directly at each sprite's 3D coordinates with generous falloff (`radius = 220`, `power = 2.4`) and non-flickering static emission (`flicker = 0`), ensuring every portal and torch casts its own vibrant glow onto adjacent walls.
+2. **Occluder-Free Direct Ambient Shading:**
+   - Map 9's cavern is an open chamber without interior occluding partitions.
+   - For `gayaHubActive`, ray-marching line-of-sight tests (`shadowCoordCtx`) are bypassed in favor of direct distance attenuation and contact ambient occlusion (`e *= shadowScale`).
+   - Eliminates trace grid ray traversal completely, sustaining 60 FPS while keeping clean bilinear per-pixel span interpolation across all rows and columns.
