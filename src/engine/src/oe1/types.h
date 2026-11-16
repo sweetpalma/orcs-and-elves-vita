@@ -744,6 +744,7 @@ struct Render {
 	uint16_t *flatTile[0x800];                     /* +0x1a3f90 [2][1024] floor, ceiling */
 	int8_t numMovingLines;                         /* +0x1a5f90 */
 	MovingLine movingLines[160];                   /* +0x1a5f94 */
+	int32_t gayaPitch;
 };
 
 /* original size 0x160  Applet.player -> +0x1a7b68 (Player_startup 0x2959c, Player_saveState 0x23b28) */
