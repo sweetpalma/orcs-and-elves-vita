@@ -288,7 +288,7 @@ static char *S(uint32_t off) {
   if (off == MOD_S_MAKE_OFFER)
     return "CROSS = Make Offer   ";
   if (off == MOD_S_CLEAR_CANCEL)
-    return "CIRCLE = Clear/Cancel";
+  return "CIRCLE = Cancel      ";
 #endif
   return (char *)ModData_str(&g_mod, off);
 }

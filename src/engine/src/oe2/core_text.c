@@ -86,7 +86,7 @@ void Text_getString(Canvas *canvas, int group, int idx, String *out) {
       return;
     }
     if (idx == 0x116) {
-      String_appendCStr_76f0(out, "CIRCLE = Clear/Cancel");
+      String_appendCStr_76f0(out, "CIRCLE = Cancel      ");
       return;
     }
     if (idx == 0x13f) {

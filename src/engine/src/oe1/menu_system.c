@@ -364,8 +364,35 @@ static void formatNumberField(MenuItem *item, int value) {
 /* 0x0000883c Keys while typing the barter offer. */
 void MenuSystem_handleNumberEntry(MenuSystem *ms, int key) {
   int sel = ms->selected;
+  if (sel < 0 || sel >= ms->numItems || !(ms->items[sel].flags & ITEM_NUMBER)) {
+    for (int i = 0; i < ms->numItems; i++) {
+      if (ms->items[i].flags & ITEM_NUMBER) {
+        sel = i;
+        break;
+      }
+    }
+  }
   MenuItem *item = &ms->items[sel];
-  int next;
+  int next = -1;
+
+  if (key == AVK_UP) {
+    if (item->action < 99999)
+      item->action++;
+    goto redraw;
+  }
+  if (key == AVK_DOWN) {
+    if (item->action > 0)
+      item->action--;
+    goto redraw;
+  }
+  if (key == AVK_RIGHT) {
+    item->action = (item->action < 99999 - 10) ? item->action + 10 : 99999;
+    goto redraw;
+  }
+  if (key == AVK_LEFT) {
+    item->action = (item->action > 10) ? item->action - 10 : 0;
+    goto redraw;
+  }
 
   unsigned digit = (unsigned)(key - AVK_0);
   if (digit < 10) {
@@ -373,6 +400,7 @@ void MenuSystem_handleNumberEntry(MenuSystem *ms, int key) {
       return;
     item->action = item->action * 10 + (int)digit;
     formatNumberField(item, item->action);
+    ms->editValue = item->action;
     return;
   }
 
@@ -382,18 +410,7 @@ void MenuSystem_handleNumberEntry(MenuSystem *ms, int key) {
     ms->editingNumber = 0;
     ms->editValue = item->action;
     next = Menus_select(ms->app->menu, ms->menuId, sel);
-  } else if (key == AVK_LEFT || key == AVK_CLR || key == AVK_STAR) {
-    /* delete the last digit; clearing an empty field leaves */
-    int old = item->action;
-    item->action = old / 10;
-    if (item->action != 0)
-      goto redraw;
-    if (old != 0) {
-      item->text2[0] = '\0';
-      return;
-    }
-    next = ms->backMenu;
-  } else if (key == AVK_SOFT1) {
+  } else if (key == AVK_CLR || key == AVK_SOFT1 || key == AVK_STAR) {
     next = ms->backMenu;
   } else {
     goto redraw;
@@ -406,6 +423,7 @@ void MenuSystem_handleNumberEntry(MenuSystem *ms, int key) {
   }
 redraw:
   formatNumberField(item, item->action);
+  ms->editValue = item->action;
 }
 
 /* 0x00008b04 Keys while the volume slider is active. */

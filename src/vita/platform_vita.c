@@ -148,7 +148,8 @@ static void render_char_8x8(SDL_Renderer *r, int x, int y, char c, int scale) {
   }
 }
 
-static void render_text_8x8(SDL_Renderer *r, int x, int y, const char *str, int scale, int line_spacing, int max_w) {
+static void render_text_8x8(SDL_Renderer *r, int x, int y, const char *str,
+                            int scale, int line_spacing, int max_w) {
   int curX = x;
   int curY = y;
   const char *p = str;
@@ -167,8 +168,10 @@ static void render_text_8x8(SDL_Renderer *r, int x, int y, const char *str, int 
         word_len++;
         w++;
       }
-      /* If the next word would exceed max_w and we aren't at the start of a line, wrap */
-      if (max_w > 0 && curX > x && ((curX - x) + (1 + word_len) * 8 * scale > max_w)) {
+      /* If the next word would exceed max_w and we aren't at the start of a
+       * line, wrap */
+      if (max_w > 0 && curX > x &&
+          ((curX - x) + (1 + word_len) * 8 * scale > max_w)) {
         curX = x;
         curY += 8 * scale + line_spacing;
         p++; /* Skip the space when breaking */
@@ -195,7 +198,8 @@ void Plat_showError(const char *title, const char *msg) {
   fprintf(stderr, "%s: %s\n", title, msg);
 #ifdef __vita__
   if (!win || !ren) {
-    Plat_init(scrW > 0 ? scrW : 352, scrH > 0 ? scrH : 200, title ? title : "Orcs & Elves II");
+    Plat_init(scrW > 0 ? scrW : 352, scrH > 0 ? scrH : 200,
+              title ? title : "Orcs & Elves II");
   }
   if (ren) {
     /* 1. Backdrop */
@@ -218,7 +222,8 @@ void Plat_showError(const char *title, const char *msg) {
 
     /* 4. Title banner: scale = 3 (24x24 px per char) */
     SDL_SetRenderDrawColor(ren, 240, 180, 50, 255);
-    render_text_8x8(ren, boxX + 30, boxY + 25, title ? title : "Orcs & Elves II", 3, 4, maxTextW);
+    render_text_8x8(ren, boxX + 30, boxY + 25,
+                    title ? title : "Orcs & Elves II", 3, 4, maxTextW);
 
     /* 5. Separator line */
     SDL_SetRenderDrawColor(ren, 80, 80, 100, 255);
@@ -231,7 +236,8 @@ void Plat_showError(const char *title, const char *msg) {
 
     /* 7. Footer prompt */
     SDL_SetRenderDrawColor(ren, 140, 140, 160, 255);
-    render_text_8x8(ren, boxX + 30, boxY + boxH - 45, "Press (X), (O), or START to exit.", 2, 0, maxTextW);
+    render_text_8x8(ren, boxX + 30, boxY + boxH - 45,
+                    "Press (X), (O), or START to exit.", 2, 0, maxTextW);
 
     SDL_RenderPresent(ren);
 
@@ -240,7 +246,8 @@ void Plat_showError(const char *title, const char *msg) {
       SceCtrlData pad;
       memset(&pad, 0, sizeof(pad));
       if (sceCtrlPeekBufferPositive(0, &pad, 1) >= 0) {
-        if (pad.buttons & (SCE_CTRL_CROSS | SCE_CTRL_CIRCLE | SCE_CTRL_START | SCE_CTRL_SQUARE | SCE_CTRL_TRIANGLE))
+        if (pad.buttons & (SCE_CTRL_CROSS | SCE_CTRL_CIRCLE | SCE_CTRL_START |
+                           SCE_CTRL_SQUARE | SCE_CTRL_TRIANGLE))
           break;
       }
       SDL_Event ev;
@@ -250,7 +257,7 @@ void Plat_showError(const char *title, const char *msg) {
       }
       sceKernelDelayThread(20000);
     }
-done:
+  done:
     sceKernelExitProcess(1);
   }
 #else
@@ -289,38 +296,6 @@ enum {
   VBTN_START = 1u << 10,
   VBTN_SELECT = 1u << 11,
 };
-
-#if defined(GAME_OE1)
-static int adjust_merchant_offer(int delta) {
-  (void)delta;
-  return 0;
-}
-#else
-static int adjust_merchant_offer(int delta) {
-  if (!g_app || !g_app->canvas || !g_app->menuSystem || !g_app->menu)
-    return 0;
-  if (g_app->canvas->state != 2 || g_app->menuSystem->menu != 0x135)
-    return 0;
-  MenuSystem *ms = g_app->menuSystem;
-  MenuItem *item = &ms->items[ms->selectedIndex];
-  int val = item->action + delta;
-  if (val < 0)
-    val = 0;
-  if (val > 9999)
-    val = 9999;
-  item->action = val;
-  g_app->menu->offerActive = 0;
-  String_setLength(&item->text2, 0);
-  String_appendInt(&item->text2, val);
-  while (String_length(&item->text2) < ms->maxDigits) {
-    String sp;
-    String_ctorCStr(&sp, " ");
-    String_insert(&item->text2, 0, &sp);
-    String_dtor(&sp, 0);
-  }
-  return 1;
-}
-#endif
 
 static int map_vita_button(uint32_t bit, uint32_t rawButtons) {
   int st = (g_app && g_app->canvas) ? g_app->canvas->state : 0;
@@ -511,14 +486,6 @@ int Plat_pollEvents(PlatKeyEvent *ev, int max, int *count) {
       int down = (cur & b) != 0;
       int avk = 0;
       if (down) {
-        if (b == VBTN_UP && adjust_merchant_offer(1))
-          continue;
-        if (b == VBTN_DOWN && adjust_merchant_offer(-1))
-          continue;
-        if (b == VBTN_LEFT && adjust_merchant_offer(-10))
-          continue;
-        if (b == VBTN_RIGHT && adjust_merchant_offer(10))
-          continue;
         avk = map_vita_button(b, pad.buttons);
         pressedAvk[i] = avk;
       } else {
@@ -588,7 +555,8 @@ void Plat_setDataDir(const char *dir) {
   migrate_saves(VITA_FALLBACK_DATA_DIR, saveDir);
   migrate_saves(VITA_FALLBACK_DATA_DIR "/saves", saveDir);
 #endif
-  if (strcmp(dataDir, VITA_PRIMARY_DATA_DIR) != 0 && strncmp(dataDir, "app0:", 5) != 0)
+  if (strcmp(dataDir, VITA_PRIMARY_DATA_DIR) != 0 &&
+      strncmp(dataDir, "app0:", 5) != 0)
     migrate_saves(dataDir, saveDir);
 #else
   snprintf(saveDir, sizeof(saveDir), "%s/saves", dir);
