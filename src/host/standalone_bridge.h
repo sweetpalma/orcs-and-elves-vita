@@ -13,6 +13,7 @@ int OE_toggleFastTick(void);
 int OE_getTickMs(void);
 void OE_setSkipPresent(int skip);
 int OE_shouldSkipPresent(void);
+void OE_invalidateLighting(void);
 void OE_presentFrame(const uint16_t *fb, int pitchPixels, int scrW, int scrH, uint32_t *outRgba);
 
 #endif

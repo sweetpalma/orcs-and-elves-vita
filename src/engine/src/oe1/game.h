@@ -50,6 +50,7 @@ static inline uint32_t Random_wordAt(const Random *rnd, int i)
 
 void OE_captureWorld(const int16_t *rect);
 void OE_captureRenderedWorld(Render *render);
+void OE_invalidateLighting(void);
 void BrewLight_begin(Render *r);
 void BrewLight_floor(Render *r, int x, int y, int u, int v, int du, int dv, int count, int ceiling);
 void BrewLight_span(Render *r, int x, int y, int count, int projection, int sprite);

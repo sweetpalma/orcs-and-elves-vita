@@ -411,8 +411,10 @@ void Player_selectWeapon(Player *player, int w)
 		w = 4;
 	}
 
-	if (player->ce.weapon != w)
+	if (player->ce.weapon != w) {
 		player->prevWeapon = player->ce.weapon;
+		OE_invalidateLighting();
+	}
 	player->ce.weapon = w;
 	if (app->canvas->state == 3)
 		Canvas_drawPlayingSoftKeys(app->canvas);

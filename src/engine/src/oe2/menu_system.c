@@ -611,24 +611,23 @@ void MenuSystem_handleNumberEntry(MenuSystem *menu, int key) {
     return;
   }
 
-  if (key == AVK_SELECT || key == AVK_POUND || key == AVK_SOFT2) {
-    if (menu->menu == 0x135 &&
-        (key == AVK_CLR || key == AVK_SOFT1 || key == AVK_STAR)) {
-      next = menu->backMenu;
-    } else if (key == AVK_SELECT || key == AVK_POUND || key == AVK_SOFT2) {
-      String_trim(&tmp, field);
-      int len = String_length(&tmp);
-      String_dtor(&tmp, 0);
-      if (len == 0)
-        return;
-      int id = menu->menu;
-      if (id == 0x97 && len != 10)
-        return;
-      menu->digitEntry = 0;
-      if (id == 0x135)
-        menu->offerValue = menu->items[menu->selectedIndex].action;
-      next = Menus_select(menus, id, menu->selectedIndex);
-    } else if (key == AVK_CLR || key == AVK_STAR) {
+  if (menu->menu == 0x135 &&
+      (key == AVK_CLR || key == AVK_SOFT1 || key == AVK_STAR)) {
+    next = menu->backMenu;
+  } else if (key == AVK_SELECT || key == AVK_POUND || key == AVK_SOFT2) {
+    String_trim(&tmp, field);
+    int len = String_length(&tmp);
+    String_dtor(&tmp, 0);
+    if (len == 0)
+      return;
+    int id = menu->menu;
+    if (id == 0x97 && len != 10)
+      return;
+    menu->digitEntry = 0;
+    if (id == 0x135)
+      menu->offerValue = menu->items[menu->selectedIndex].action;
+    next = Menus_select(menus, id, menu->selectedIndex);
+  } else if (key == AVK_CLR || key == AVK_STAR) {
       if (menus->offerActive != 0) {
         String_setLength(field, 0);
         item->action = 0;

@@ -26,7 +26,7 @@ static uint32_t lut565ToRgba[65536];
 static int lut565Ready;
 static int worldX, worldY, worldW, worldH, worldValid;
 static uint32_t lastFrameSig;
-static int lastViewX, lastViewY, lastViewZ, lastViewAngle, stationaryCount;
+static int lastViewX, lastViewY, lastViewZ, lastViewAngle, lastWeapon = -1, stationaryCount;
 static int cineCallsThisFrame;
 static int toastFrames;
 static const char *toastText = "";
@@ -88,9 +88,11 @@ static void apply_world_lighting(int x, int y, int w, int h) {
   int vy = (g_app && g_app->render) ? g_app->render->viewY : 0;
   int vz = (g_app && g_app->render) ? g_app->render->viewZ : 0;
   int va = (g_app && g_app->canvas) ? g_app->canvas->viewAngle : 0;
+  int wp = (g_app && g_app->player) ? (int)g_app->player->ce.weapon : -1;
   int samePose = worldValid && worldX == x && worldY == y && worldW == w &&
                  worldH == h && sig == lastFrameSig && vx == lastViewX &&
-                 vy == lastViewY && vz == lastViewZ && va == lastViewAngle;
+                 vy == lastViewY && vz == lastViewZ && va == lastViewAngle &&
+                 wp == lastWeapon;
   if (samePose) {
     for (int row = 0; row < h; row++)
       memcpy(&b->px[(y + row) * b->pitch + x], &lit565[row * w],
@@ -104,6 +106,7 @@ static void apply_world_lighting(int x, int y, int w, int h) {
   lastViewY = vy;
   lastViewZ = vz;
   lastViewAngle = va;
+  lastWeapon = wp;
 
 #ifdef OE_NO_SPRITE_SHADOWS
   for (int row = 0; row < h; row++) {
@@ -297,6 +300,12 @@ void OE_setSkipPresent(int skip) {
 }
 
 int OE_shouldSkipPresent(void) { return skipPresent; }
+
+void OE_invalidateLighting(void) {
+  lastFrameSig = 0;
+  worldValid = 0;
+  lastWeapon = -1;
+}
 
 /* Minimal 4x5 uppercase glyph table for the mode toggle toast. */
 static uint32_t glyph_bits(char c) {

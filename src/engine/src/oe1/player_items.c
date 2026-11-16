@@ -381,6 +381,7 @@ void Player_selectWeapon(Player *player, int w)
 			}
 		}
 		player->prevWeapon = player->ce.weapon;
+		OE_invalidateLighting();
 	}
 	player->ce.weapon = (uint8_t)w;
 	Canvas_drawPlayingSoftKeys(player->canvas);
