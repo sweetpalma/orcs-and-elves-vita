@@ -872,7 +872,7 @@ void Render_render(Render *render, int viewX, int viewY, int viewZ, int angle) {
   if (facing && facing->def && facing->def->eType == 7 &&
       facing->def->eSubType == 5 &&
       Entity_distSqFrom(facing, viewX, viewY) <= 0x4000) {
-    targetPitch = 24 * Brew_screenScale();
+    targetPitch = 55 * Brew_screenScale();
   }
   int step = 4 * Brew_screenScale();
   if (render->gayaPitch < targetPitch) {

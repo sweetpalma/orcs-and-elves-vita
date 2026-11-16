@@ -75,6 +75,9 @@ typedef struct {
   - **Wall Torches & Sconces:** Tile `116` (r=1.0, g=0.42, b=0.10, radius 230), `136` (Torchiere, radius 190, power 1.8), `181` (Wall sconce, radius 150), `185` (Fire sconce, radius 180).
   - **Fires & Braziers:** Tile `130` (Fire, radius 240), `145` (Fire Portal, r=0.80, g=0.35, b=1.0, radius 180, power 2.4, constant glow).
   - **Healing Crystals (Gaya's Hub / Caverns):** Tile `165` (r=0.15, g=0.50, b=1.0, radius 240, power 2.2).
+  - **Dwarven Ghosts & King Brahm:** Tiles `65..67`, `69` (spectral cyan/blue spirit glow: r=0.30, g=0.70, b=1.0, radius 180, power 1.4..1.5).
+  - **War Hammer World Pickup:** Tile `14` (legendary golden radiance: r=1.0, g=0.78, b=0.18, radius 170, power 1.6).
+  - **Magic Seal Barrier:** Tile `137` (Entity #139, swirling golden/amber flame barrier: r=1.0, g=0.58, b=0.18, radius 190, power 1.8, flickering).
   - **Elemental Flames & Gems:** Tiles `220..223` (colored gems/crystals), `224`/`225` (blue/cyan magic flame), `227` (torch glow), `230` (fire column), `235` (purple fire), `238` (brazier flame), `242..245` (tinted glows), `252` (portal gate glow).
 
 - **Orcs & Elves II (`OE2`):**
@@ -84,10 +87,13 @@ typedef struct {
 
 #### Player & Held Weapon Lights:
 
-- **Inherent Player Ambient Light:** Always active at low intensity (`radius = 105 * 1.2`, `power = 0.28`, `r=1.0, g=0.62, b=0.28`).
+- **Inherent Player Ambient Light:** Always active:
+  - **OE1:** Enhanced visibility for dark subterranean corridors (`radius = 160 * 1.2`, `power = 0.62`, `r=1.0, g=0.62, b=0.28`).
+  - **OE2:** Original low-intensity ambient (`radius = 105 * 1.2`, `power = 0.28`, `r=1.0, g=0.62, b=0.28`).
 - **Orcs & Elves (`oe1`) Weapons:**
-  - `w == 3` (Vorpal/Flaming Sword), `w == 5` (Heavy Crossbow), `w == 7` (Phoenix Eggs): full firelight (`radius = 210`, `power = 1.15`, `r=1.0, g=0.38, b=0.08`).
-  - Emissive weapons (`w in {0, 3, 7}`) receive a 1.4x self-illumination boost with a 1.25 minimum brightness floor.
+  - `w == 2` (Flaming Sword), `w == 5` (Heavy Crossbow), `w == 7` (Phoenix Eggs): full firelight (`radius = 210`, `power = 1.15`, `r=1.0, g=0.38, b=0.08`).
+  - `w == 3` (Vorpal Sword): enchanted blue light (`radius = 210`, `power = 1.15`, `r=0.25, g=0.55, b=1.0`).
+  - Emissive weapons (`w in {0, 2, 3, 7, 8, 9, 10}`) receive a 1.4x self-illumination boost with a 1.25 minimum brightness floor.
 - **Orcs & Elves II (`oe2`) Weapons:**
   - `w == 5` (Fire Crossbow), `w == 6` (Kinetic Crossbow), `w == 7` (Flaming Sword): full firelight (`radius = 210 * 1.2`, `power = 1.15`, `r=1.0, g=0.38, b=0.08`).
   - Wand Orbs (`w in {8..10}`): 75% intensity (`radius = 210 * 1.2`, `power = 0.86`):

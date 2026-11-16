@@ -168,7 +168,13 @@ static const Source sources[] = {{116, 1, .42f, .10f, 230, 2.2f, -20, 1},
                                  {252, .55f, .65f, 1, 170, 1.4f, 0, 1},
                                  {145, .80f, .35f, 1.f, 180, 2.4f, 20, 0},
                                  {165, .15f, .50f, 1.f, 240, 2.2f, 16, 0},
-                                 {185, 1.f, .45f, .18f, 180, 1.2f, 24, 1}};
+                                 {185, 1.f, .45f, .18f, 180, 1.2f, 24, 1},
+                                 {65, .30f, .70f, 1.f, 180, 1.4f, 16, 0},
+                                 {66, .30f, .70f, 1.f, 180, 1.4f, 16, 0},
+                                 {67, .30f, .70f, 1.f, 180, 1.4f, 16, 0},
+                                 {69, .30f, .70f, 1.f, 180, 1.5f, 16, 0},
+                                 {14, 1.f, .78f, .18f, 170, 1.6f, 10, 0},
+                                 {137, 1.f, .58f, .18f, 190, 1.8f, 16, 1}};
 #else
 static const Source sources[] = {{116, 1, .42f, .10f, 230, 2.2f, -20, 1},
                                  {130, 1, .40f, .10f, 240, 2.2f, 0, 1},
@@ -1568,6 +1574,18 @@ static void gather(Render *r) {
   Player *p = g_app->player;
   Canvas *c = g_app->canvas;
   float a = (c->viewAngle & 1023) * (6.28318530718f / 1024);
+#if defined(GAME_OE1)
+  Light l = {c->viewX + cosf(a) * 14,
+             c->viewY - sinf(a) * 14,
+             c->viewZ - 5.f,
+             1,
+             .62f,
+             .28f,
+             160,
+             .62f,
+             0,
+             2000};
+#else
   Light l = {c->viewX + cosf(a) * 14,
              c->viewY - sinf(a) * 14,
              c->viewZ - 5.f,
@@ -1578,13 +1596,22 @@ static void gather(Render *r) {
              .28f,
              0,
              2000};
+#endif
   if (p && p->weapons) {
     int w = p->ce.weapon;
 #if defined(GAME_OE1)
-    if (w == 3 || w == 5 || w == 7) {
-      l.r = 1;
+    if (w == 2 || w == 5 || w == 7) {
+      /* Flaming Sword (w=2), Heavy Crossbow (w=5), Phoenix Eggs (w=7): warm orange firelight */
+      l.r = 1.f;
       l.g = .38f;
       l.b = .08f;
+      l.radius = 210;
+      l.power = 1.15f;
+    } else if (w == 3) {
+      /* Vorpal Sword (w=3): vibrant enchanted blue light */
+      l.r = .25f;
+      l.g = .55f;
+      l.b = 1.f;
       l.radius = 210;
       l.power = 1.15f;
     } else if (w >= 8) {
@@ -2438,7 +2465,7 @@ static void incidentEnergyCtx(const Surface *s, const float *flicker,
   if (kind == 4 && g_app && g_app->player && g_app->player->weapons) {
     int w = g_app->player->ce.weapon;
 #if defined(GAME_OE1)
-    if (w == 0 || w == 3 || w == 7 || w >= 8)
+    if (w == 0 || w == 2 || w == 3 || w == 7 || w >= 8)
 #else
     if (w == 0 || w == 5 || w == 6 || w == 7 || w >= 8)
 #endif
@@ -2509,7 +2536,7 @@ static void incidentEnergy(const Surface *s, const float *flicker, int column,
   if (kind == 4 && g_app && g_app->player && g_app->player->weapons) {
     int w = g_app->player->ce.weapon;
 #if defined(GAME_OE1)
-    if (w == 0 || w == 3 || w == 7 || w >= 8)
+    if (w == 0 || w == 2 || w == 3 || w == 7 || w >= 8)
 #else
     if (w == 0 || w == 5 || w == 6 || w == 7 || w >= 8)
 #endif
