@@ -466,7 +466,6 @@ void Canvas_drawScrollingText(Canvas *canvas)
 		start = canvas->app->tickTime - total; /* hold at the end */
 
 	Ui_clearScreen();
-	IDISPLAY_Update(); /* deferred (BREW UpdateEx FALSE): no black frame is ever shown */
 
 	Canvas_drawString(canvas, canvas->dialogText, canvas->viewCenterX - 0x40,
 	                  canvas->viewCenterY + 0x40 - (canvas->app->tickTime - start) / 0x3e, 0, 0);
