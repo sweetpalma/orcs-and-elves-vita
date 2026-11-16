@@ -1,17 +1,28 @@
-# Orcs & Elves II (PlayStation Vita Port)
+# Orcs & Elves I & II (PlayStation Vita)
 
-![Orcs & Elves II on PlayStation Vita](screenshot.png)
+![Orcs & Elves](screenshot.png)
+
+A modern port of the classic id Software dungeon crawlers Orcs & Elves and Orcs & Elves II — now featuring remastered lighting, widescreen support, and refined controls!
 
 ## Features
 
-- **Widescreen patch:** Renders at `352×200` widescreen (instead of the original `176×220` phone layout) scaled to the PS Vita's `960×544` screen.
 - **Remastered lighting:** Adds real-time point lighting, geometric ray shadows, contact ambient occlusion, and projectile impact flashes while keeping all original BREW textures and sprites, switchable in Options with Classic mode.
+- **Widescreen support:** Renders at `352×200` widescreen (instead of the original `176×220` phone layout) scaled to the PS Vita's `960×544` native resolution.
 - **Faithful simulation:** Preserves the original BREW gameplay timing and RNG.
 - **Fully tested:** Completely playable and tested from start to finish on real PlayStation Vita hardware.
 
 ## Installation
 
-- Obtain official game files (e.g. from [Internet Archive](https://archive.org/details/oe2_brew)), and copy them to `ux0:data/oe2/` on your Vita.
+### Orcs & Elves
+
+- Obtain official [game files](https://archive.org/details/oe1_brew), and copy them to `ux0:data/oe1/` on your Vita.
+- Download the [latest release](https://github.com/sweetpalma/orcs-and-elves-vita/releases).
+- Install `oe1.vpk` on your Vita.
+- Enjoy!
+
+### Orcs & Elves II
+
+- Obtain official [game files](https://archive.org/details/oe2_brew), and copy them to `ux0:data/oe2/` on your Vita.
 - Download the [latest release](https://github.com/sweetpalma/oe-2-vita/releases).
 - Install `oe2.vpk` on your Vita.
 - Enjoy!
@@ -30,25 +41,23 @@
   - **Start:** Pause.
   - **Select:** Map.
 
-## Building
+## Development
 
-Builds produce standalone executables and packages without bundling proprietary game data, ready for clean distribution.
+Pull requests and bug reports are highly encouraged! Feel free to open an issue or submit a PR if you run into any problems or want to contribute improvements.
 
-### Docker
-
-Building with Docker is the easiest way.
+### Docker Build
 
 ```sh
 # Build PS Vita .vpk
 docker compose run --rm --build vita
 
-# Build PC Linux binary (build/oe2)
+# Build PC binary
 docker compose run --rm --build pc
 ```
 
-### Local Build
+### Native Build
 
-To build the standard PS Vita package (`oe2.vpk` without bundled game data; requires VitaSDK at `tools/vendor/vitasdk` or `VITASDK` environment variable):
+To build the standard PS Vita package (requires VitaSDK at `tools/vendor/vitasdk` or `VITASDK` environment variable):
 
 ```sh
 python3 tools/build_vita.py
@@ -60,7 +69,7 @@ To build for PC locally (requires CMake and SDL2):
 python3 tools/build_pc.py
 ```
 
-You can also pass `--bundle-data` to bundle `orcsandelves2.bar` and `orcsandelves2.mod` directly inside the `.vpk` (requires the files in `data/`). This is intended **strictly for local debug and testing purposes**, not for distribution.
+You can also pass `--bundle-data` to bundle game data directly inside the `.vpk` (requires the files in `data/`). This is intended **strictly for local debug and testing purposes**, not for distribution.
 
 ```sh
 python3 tools/build_vita.py --bundle-data
@@ -70,4 +79,4 @@ python3 tools/build_vita.py --bundle-data
 
 This project is distributed under the GNU General Public License v3.0. See [LICENSE](LICENSE) for the full license text, and [SOURCES.md](SOURCES.md) for upstream provenance and author credits.
 
-Original game assets (`orcsandelves2.bar` and `orcsandelves2.mod`) are the property of id Software and Fountainhead Entertainment and are not included in this repository.
+Original game assets are the property of id Software and Fountainhead Entertainment and are not included in this repository.
