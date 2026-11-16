@@ -8,7 +8,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#ifdef OE_NO_SPRITE_SHADOWS
+#ifndef OE_NO_SPRITE_SHADOWS
+#define OE_NO_SPRITE_SHADOWS 1
+#endif
 #include <stdatomic.h>
 #ifdef __vita__
 #define OE_LIGHT_MT 1
@@ -17,7 +19,6 @@
 #define LIGHT_THREADS 3
 #else
 #define LIGHT_THREADS 1
-#endif
 #endif
 #ifdef OE_QA_INTERACTIONS
 #include <emscripten.h>
@@ -32,7 +33,6 @@ double BrewLight_qaProfile(int field) {
 #define GRID_CELLS (128 * 128 * 24)
 #define HIDDEN 0x40000u
 #define NO_DEPTH 0x200000u
-#ifdef OE_NO_SPRITE_SHADOWS
 /* Compact 8-byte Surface so 352x166 (~467 KB) fits inside PS Vita's 512 KB L2
  * cache. x, y and z (bits 3..15 of zKind) are Q2 signed fixed-point (1/4 world
  * unit). rawKind (bits 0..2 of zKind): 0=none, 1=floor (nz=+127), 2=wall,
@@ -78,29 +78,6 @@ static inline void surfSet(Surface *s, float px, float py, float pz,
   s->nx = nx;
   s->ny = ny;
 }
-#else
-typedef struct {
-  float x, y, z;
-  signed char nx, ny, nz;
-  unsigned char kind;
-} Surface;
-static inline int surfKind(const Surface *s) { return s->kind; }
-static inline int surfNz(const Surface *s) { return s->nz; }
-static inline float surfX(const Surface *s) { return s->x; }
-static inline float surfY(const Surface *s) { return s->y; }
-static inline float surfZ(const Surface *s) { return s->z; }
-static inline void surfSet(Surface *s, float px, float py, float pz,
-                           signed char nx, signed char ny, signed char nz,
-                           unsigned char kind) {
-  s->x = px;
-  s->y = py;
-  s->z = pz;
-  s->nx = nx;
-  s->ny = ny;
-  s->nz = nz;
-  s->kind = kind;
-}
-#endif
 #if defined(GAME_OE1)
 #define RENDER_W(r) ((r)->viewW)
 #define RENDER_H(r) ((r)->viewH)
@@ -212,18 +189,7 @@ typedef struct {
 static FloorDirection floorDirections[880];
 static Surface surfaces[MAX_PIXELS];
 static uint32_t lit[MAX_PIXELS], cachedHash, geometryHash;
-static unsigned char checked[GRID_CELLS];
-static uint16_t visibility[GRID_CELLS];
-static uint16_t wallVisibility[GRID_CELLS];
-/* Static walls do not change when a billboard animation advances. Retain the
- * three exact ray results separately from the complete shadow-count cache. */
-static uint32_t wallSamples[GRID_CELLS], wallLightHash[8], lightCacheHash[8];
-static uint8_t wallSampleReady[8][(GRID_CELLS + 7) / 8];
-#define MAX_DIRTY_CELLS 32768
-#define MAX_DIRTY_WALL_BYTES 8192
-static int dirtyCheckedCells[MAX_DIRTY_CELLS], numDirtyChecked;
-static int dirtyWallBytes[8][MAX_DIRTY_WALL_BYTES], numDirtyWall[8];
-#ifdef OE_NO_SPRITE_SHADOWS
+static uint32_t wallLightHash[8];
 static int lightWallSlot[8];
 static uint32_t shadowFrameGen = 1;
 static _Atomic uint16_t wallVisState[GRID_CELLS];
@@ -231,37 +197,17 @@ static _Atomic uint16_t wallVisState[GRID_CELLS];
 static int dirtyWallCells[8][MAX_DIRTY_WALL_CELLS];
 static _Atomic uint32_t numDirtyWallAtomic[8];
 static _Atomic uint8_t wallCheckedAtomic[3][129 * 129];
-#endif
 static uint32_t floatBits(float value) {
   uint32_t bits;
   memcpy(&bits, &value, sizeof(bits));
   return bits;
 }
-static Caster casters[800], posedCasters[800], nativePoses[800];
-static int casterTag = -1, lightCasters[8][800], casterCount[8];
 static Surface *underWeapon;
 static uint32_t *weaponBackground;
 static size_t weaponCapacity;
 static int weaponCopied, weaponBottomY = -1;
 /* A small, geometry-only distance field supplies smooth floor contact shade. */
 static float wallDistance[3][129 * 129], wallAxisDistance[3][2][129 * 129];
-#ifndef OE_NO_SPRITE_SHADOWS
-static unsigned char wallChecked[3][129 * 129];
-#endif
-#ifdef OE_NO_SPRITE_SHADOWS
-typedef struct {
-  int16_t x, y;
-  float distance;
-  int axis;
-  uint32_t validGen;
-} CornerCache;
-#else
-typedef struct {
-  float x, y, distance;
-  int axis, valid;
-} CornerCache;
-#endif
-static CornerCache cornerCache[704];
 static Light lights[8];
 /* Arrival events outlive the retired missile, independently of sprite slots. */
 typedef struct {
@@ -359,13 +305,12 @@ typedef union {
   uint64_t u64;
 } SurfacePack;
 static int cachedSpanLineIdx = -1;
-static float cachedSpanNx, cachedSpanNy, cachedInvFocalW;
+static float cachedSpanNx, cachedSpanNy, cachedInvFocalW, cachedSpanT;
 static int cachedSpanActive, cachedSpanX, cachedSpanProj, cachedSpanSprite,
     cachedSpanLine;
 static int16_t cachedSpanQx, cachedSpanQy;
 static signed char cachedSpanSnx, cachedSpanSny;
 static int32_t cachedSpanZBase16, cachedSpanDz16;
-static float cachedSpanScale, cachedSpanDz, cachedSpanPx, cachedSpanPy;
 static int lightSkipCapture = 0;
 void BrewLight_setSkip(int skip) { lightSkipCapture = skip ? 1 : 0; }
 void BrewLight_begin(Render *r) {
@@ -382,21 +327,8 @@ void BrewLight_begin(Render *r) {
     return;
   }
   memset(surfaces, 0, (size_t)width * height * sizeof(Surface));
-#ifndef OE_NO_SPRITE_SHADOWS
-  int nSprites =
-      r->numSprites < 0 ? 0 : (r->numSprites > 800 ? 800 : r->numSprites);
-  if (r == g_app->render) {
-    memset(nativePoses, 0, (size_t)nSprites * sizeof(nativePoses[0]));
-    memset(posedCasters, 0, (size_t)nSprites * sizeof(posedCasters[0]));
-  } else
-    memcpy(posedCasters, nativePoses,
-           (size_t)nSprites * sizeof(posedCasters[0]));
-  memset(floorDirections, 0, (size_t)height * sizeof(floorDirections[0]));
-#else
   if (width > 400 || height > 240)
     memset(floorDirections, 0, (size_t)height * sizeof(floorDirections[0]));
-#endif
-  casterTag = -1;
   cachedSpanLineIdx = -1;
   cachedSpanActive = 0;
 #if defined(GAME_OE1)
@@ -420,9 +352,7 @@ void BrewLight_floor(Render *r, int x, int y, int u, int v, int du, int dv,
                      int count, int ceiling) {
   if (r != renderer || y < 0 || y >= height || count <= 0)
     return;
-#ifdef OE_NO_SPRITE_SHADOWS
   if (width > 400 || height > 240)
-#endif
     if (y < 880) {
       int axis = abs(du) >= abs(dv);
       int dominant = axis ? du : dv;
@@ -441,7 +371,6 @@ void BrewLight_floor(Render *r, int x, int y, int u, int v, int du, int dv,
   uint32_t vv = (uint32_t)v + (uint32_t)dv * (uint32_t)i0;
   Surface *dst = &surfaces[y * width + x + i0];
   int n = i1 - i0;
-#ifdef OE_NO_SPRITE_SHADOWS
   int iz = (ceiling ? RENDER_CEIL(r) : RENDER_FLOOR(r)) * 4;
   if (iz < -4096)
     iz = -4096;
@@ -469,19 +398,6 @@ void BrewLight_floor(Render *r, int x, int y, int u, int v, int du, int dv,
       memcpy(&dst[i], &packed, sizeof(packed));
     }
   }
-#else
-  float pz = (float)(ceiling ? RENDER_CEIL(r) : RENDER_FLOOR(r));
-  signed char snz = ceiling ? -127 : 127;
-  for (int i = 0; i < n; i++, uu += (uint32_t)du, vv += (uint32_t)dv) {
-    dst[i].x = (int32_t)uu * (1.f / 65536.f);
-    dst[i].y = (int32_t)vv * (1.f / 65536.f);
-    dst[i].z = pz;
-    dst[i].nx = 0;
-    dst[i].ny = 0;
-    dst[i].nz = snz;
-    dst[i].kind = 1;
-  }
-#endif
 }
 void BrewLight_span(Render *r, int x, int y, int count, int projection,
                     int sprite) {
@@ -502,29 +418,40 @@ void BrewLight_span(Render *r, int x, int y, int count, int projection,
   int projWorld = sprite ? r->projH : r->projW;
 #endif
   float invFocalW = cachedInvFocalW;
-#ifdef OE_NO_SPRITE_SHADOWS
   int16_t qx, qy;
   int32_t zBase16, dz16;
-#else
-  float px, py;
-  float dz, z;
-#endif
   signed char snx, sny;
-  if (cachedSpanActive && cachedSpanX == x && cachedSpanProj == projection &&
+  if (cachedSpanActive && cachedSpanProj == projection &&
       cachedSpanSprite == sprite && cachedSpanLine == lineId) {
-#ifdef OE_NO_SPRITE_SHADOWS
-    qx = cachedSpanQx;
-    qy = cachedSpanQy;
     zBase16 = cachedSpanZBase16;
     dz16 = cachedSpanDz16;
-#else
-    px = cachedSpanPx;
-    py = cachedSpanPy;
-    dz = cachedSpanDz;
-    z = r->viewZ + (height - 2 * y - 1.f) * cachedSpanScale;
-#endif
     snx = cachedSpanSnx;
     sny = cachedSpanSny;
+    if (cachedSpanX == x) {
+      qx = cachedSpanQx;
+      qy = cachedSpanQy;
+    } else {
+      float t = cachedSpanT;
+      float lateral = (2 * x + 1.f - width) * invFocalW;
+      float spanPx = r->viewX + (fx + rx * lateral) * t,
+            spanPy = r->viewY + (fy + ry * lateral) * t;
+      if (!sprite && lineId >= 0 && lineId < lineCount) {
+        float nx = cachedSpanNx, ny = cachedSpanNy;
+        if (nx * (r->viewX - spanPx) + ny * (r->viewY - spanPy) < 0) {
+          nx = -nx;
+          ny = -ny;
+        }
+        snx = (signed char)(nx * 127);
+        sny = (signed char)(ny * 127);
+        cachedSpanSnx = snx;
+        cachedSpanSny = sny;
+      }
+      qx = clampQ2(fastRoundf(spanPx * 4.f));
+      qy = clampQ2(fastRoundf(spanPy * 4.f));
+      cachedSpanQx = qx;
+      cachedSpanQy = qy;
+      cachedSpanX = x;
+    }
   } else {
     float t = (float)projWorld / projection;
     float lateral = (2 * x + 1.f - width) * invFocalW;
@@ -557,25 +484,15 @@ void BrewLight_span(Render *r, int x, int y, int count, int projection,
     sny = (signed char)(ny * 127);
     float scale = t * invFocalW;
     float spanDz = -2.f * scale;
-#ifdef OE_NO_SPRITE_SHADOWS
     qx = clampQ2(fastRoundf(spanPx * 4.f));
     qy = clampQ2(fastRoundf(spanPy * 4.f));
     zBase16 = fastRoundf((r->viewZ + (height - 1.f) * scale) * 65536.f);
     dz16 = fastRoundf(spanDz * 65536.f);
+    cachedSpanT = t;
     cachedSpanQx = qx;
     cachedSpanQy = qy;
     cachedSpanZBase16 = zBase16;
     cachedSpanDz16 = dz16;
-#else
-    px = spanPx;
-    py = spanPy;
-    dz = spanDz;
-    z = r->viewZ + (height - 2 * y - 1.f) * scale;
-    cachedSpanPx = spanPx;
-    cachedSpanPy = spanPy;
-    cachedSpanScale = scale;
-    cachedSpanDz = spanDz;
-#endif
     cachedSpanActive = 1;
     cachedSpanX = x;
     cachedSpanProj = projection;
@@ -588,7 +505,6 @@ void BrewLight_span(Render *r, int x, int y, int count, int projection,
   int i0 = y < 0 ? -y : 0, i1 = (y + count > height) ? (height - y) : count;
   if (i0 >= i1)
     return;
-#ifdef OE_NO_SPRITE_SHADOWS
   int32_t zz = zBase16 + (y + i0) * dz16;
   int iz0 = zz >> 14, iz1 = (zz + dz16 * (i1 - i0 - 1)) >> 14;
   Surface *s = &surfaces[(y + i0) * width + x];
@@ -609,19 +525,6 @@ void BrewLight_span(Render *r, int x, int y, int count, int projection,
       memcpy(s, &basePack.u64, sizeof(basePack.u64));
     }
   }
-#else
-  z += dz * i0;
-  for (int i = i0; i < i1; i++, z += dz) {
-    Surface *s = &surfaces[(y + i) * width + x];
-    s->x = px;
-    s->y = py;
-    s->z = z;
-    s->nx = snx;
-    s->ny = sny;
-    s->nz = 0;
-    s->kind = kind;
-  }
-#endif
 }
 static int weaponCanShift(void) {
 #if defined(GAME_OE1)
@@ -636,7 +539,14 @@ void BrewLight_weapon(Render *r, int x, int y, int count, int blend) {
    * old bright background is not relit as a solid weapon-shaped overlay. */
   if (r != renderer || count <= 0 || (blend >= 1 && blend <= 7))
     return;
-  if (!weaponCopied && weaponCanShift()) {
+  if ((unsigned)x >= (unsigned)width)
+    return;
+  int i0 = y < 0 ? -y : 0;
+  int i1 = (y + count > height) ? (height - y) : count;
+  if (i0 >= i1)
+    return;
+  int canShift = weaponCanShift();
+  if (canShift) {
     size_t pixels = (size_t)width * height;
     if (pixels > weaponCapacity) {
       Surface *s = malloc(pixels * sizeof(Surface));
@@ -652,47 +562,43 @@ void BrewLight_weapon(Render *r, int x, int y, int count, int blend) {
       weaponBackground = b;
       weaponCapacity = pixels;
     }
-    memcpy(underWeapon, surfaces, pixels * sizeof(Surface));
-    for (int yy = 0; yy < height; yy++)
-      for (int xx = 0; xx < width; xx++) {
-#if defined(GAME_OE1)
-        uint16_t c = r->framebuffer[yy * r->viewW + xx];
-#else
-        uint16_t c = r->framebuffer[yy * (r->fbDib->nPitch / 2) + xx];
-#endif
-        uint32_t r5 = (c >> 11) & 31u, g6 = (c >> 5) & 63u, b5 = c & 31u;
-        weaponBackground[yy * width + xx] =
-            ((r5 << 3) | (r5 >> 2)) | (((g6 << 2) | (g6 >> 4)) << 8) |
-            (((b5 << 3) | (b5 >> 2)) << 16) | 0xff000000u;
-      }
     weaponCopied = 1;
   }
-  if ((unsigned)x >= (unsigned)width)
-    return;
-  int i0 = y < 0 ? -y : 0;
-  int i1 = (y + count > height) ? (height - y) : count;
-  if (i0 >= i1)
-    return;
   Surface wp;
   surfSet(&wp, r->viewX + fx * 20, r->viewY + fy * 20, r->viewZ - 8,
           (signed char)(-fx * 127), (signed char)(-fy * 127), 0, 4);
-  Surface *dst = &surfaces[(y + i0) * width + x];
-  for (int i = i0; i < i1; i++, dst += width)
-    *dst = wp;
+  int idx = (y + i0) * width + x;
+  if (canShift) {
+#if defined(GAME_OE1)
+    int pitch = r->viewW;
+#else
+    int pitch = r->fbDib->nPitch / 2;
+#endif
+    int fbIdx = (y + i0) * pitch + x;
+    for (int i = i0; i < i1; i++, idx += width, fbIdx += pitch) {
+      if (surfRawKind(&surfaces[idx]) != 4) {
+        underWeapon[idx] = surfaces[idx];
+        uint16_t c = r->framebuffer[fbIdx];
+        uint32_t r5 = (c >> 11) & 31u, g6 = (c >> 5) & 63u, b5 = c & 31u;
+        weaponBackground[idx] = ((r5 << 3) | (r5 >> 2)) |
+                                (((g6 << 2) | (g6 >> 4)) << 8) |
+                                (((b5 << 3) | (b5 >> 2)) << 16) | 0xff000000u;
+      }
+      surfaces[idx] = wp;
+    }
+  } else {
+    for (int i = i0; i < i1; i++, idx += width)
+      surfaces[idx] = wp;
+  }
   if (y + i1 - 1 > weaponBottomY)
     weaponBottomY = y + i1 - 1;
 }
 void BrewLight_tagCaster(Render *r, Sprite *s) {
-#ifdef OE_NO_SPRITE_SHADOWS
   (void)r;
   (void)s;
-#else
-  casterTag = s && r == renderer ? (int)(s - r->sprites) : -1;
-#endif
 }
 void BrewLight_poseCaster(Render *r, int x, int y, int z, int tile, int frame,
                           int flags, int mode, int scale) {
-#ifdef OE_NO_SPRITE_SHADOWS
   (void)r;
   (void)x;
   (void)y;
@@ -702,98 +608,7 @@ void BrewLight_poseCaster(Render *r, int x, int y, int z, int tile, int frame,
   (void)flags;
   (void)mode;
   (void)scale;
-#else
-  if (r != renderer || casterTag < 0 || casterTag >= 800 || mode != 0)
-    return;
-  int id = r->sprites[casterTag].info & 255;
-  if (id == 116 && tile != r->spriteRemap[118])
-    return;
-  if (tile != r->spriteRemap[id] &&
-      !(id == 153 && tile == r->spriteRemap[152]) &&
-      !(id == 116 && tile == r->spriteRemap[118]))
-    return;
-  posedCasters[casterTag] = (Caster){
-      x, y, z, 64.f * scale / 65536.f, tile + frame, (uint32_t)flags, 1};
-  if (r == g_app->render)
-    nativePoses[casterTag] = posedCasters[casterTag];
-#endif
 }
-#if !defined(GAME_OE1) && !defined(OE_NO_SPRITE_SHADOWS)
-static int casterEligible(const Sprite *s) {
-  initSourceTables();
-  int tile = s->info & 255;
-  if ((s->info & (0x10000u | 0x40000u)) || s->renderMode == 4)
-    return 0;
-  return casterEligibleTile[tile] != 0;
-}
-static Caster spriteCaster(const Render *r, const Sprite *s) {
-  int tile = s->info & 255;
-  return (Caster){s->x,
-                  s->y,
-                  s->z,
-                  (float)s->scale,
-                  r->spriteRemap[tile == 116 ? 118 : tile] +
-                      ((s->info >> 8) & 15),
-                  s->info,
-                  casterEligible(s)};
-}
-static int casterBlocks(const Render *r, const Caster *s, float ax, float ay,
-                        float az, float bx, float by, float bz) {
-  if (!s->active || s->size <= 0 || s->frame < 0 || s->frame >= 1500)
-    return 0;
-  float nx = bx - s->x, ny = by - s->y;
-  if (s->flags & 0x180000u) {
-    nx = 0;
-    ny = 1;
-  } else if (s->flags & 0x600000u) {
-    nx = 1;
-    ny = 0;
-  }
-  float n = sqrtf(nx * nx + ny * ny);
-  if (n < .01f)
-    return 0;
-  nx /= n;
-  ny /= n;
-  float dx = bx - ax, dy = by - ay, den = dx * nx + dy * ny;
-  if (fabsf(den) < .0001f)
-    return 0;
-  float t = ((s->x - ax) * nx + (s->y - ay) * ny) / den;
-  if (t <= .025f || t >= .975f)
-    return 0;
-  float lateral = -(ax + t * dx - s->x) * ny + (ay + t * dy - s->y) * nx,
-        z = az + (bz - az) * t;
-  int column = (int)floorf((lateral / s->size + .5f) * 88),
-      row = (int)floorf((.5f - (z - s->z) / s->size) * 88);
-  if (column < 0 || column >= 88 || row < 0 || row >= 88)
-    return 0;
-  if (s->flags & 0x1000000u)
-    column = 87 - column;
-  if (s->flags & 0x20000000u)
-    row = 87 - row;
-  int ofs = r->spriteMap[s->frame].ofs;
-  const uint16_t *shape = r->shapeSpans;
-  if (ofs < 0 || ofs + 4 >= 0x16800 || column < shape[ofs + 2] ||
-      column > shape[ofs + 3])
-    return 0;
-  int at = ofs + 4 + column - shape[ofs + 2];
-  if (at >= 0x16800)
-    return 0;
-  int run = ofs + 2 + (int16_t)shape[at];
-  for (int i = 0; i < 90 && run >= 0 && run + 1 < 0x16800; i++, run += 2) {
-    unsigned word = shape[run], start = word & 255;
-    if (start == 127)
-      return 0;
-    if (row >= (int)start && row < (int)(start + (word >> 8)))
-      return 1;
-  }
-  return 0;
-}
-int BrewLight_spriteBlocks(const Render *r, const Sprite *s, float ax, float ay,
-                           float az, float bx, float by, float bz) {
-  Caster c = spriteCaster(r, s);
-  return casterBlocks(r, &c, ax, ay, az, bx, by, bz);
-}
-#else
 int BrewLight_spriteBlocks(const Render *r, const Sprite *s, float ax, float ay,
                            float az, float bx, float by, float bz) {
   (void)r;
@@ -806,26 +621,66 @@ int BrewLight_spriteBlocks(const Render *r, const Sprite *s, float ax, float ay,
   (void)bz;
   return 0;
 }
-#endif
 /* Broad phase only: the exact intersection test below is unchanged. */
 #define TRACE_SIDE 64
 #define TRACE_ORIGIN (-1024.f)
 #define TRACE_REFS 32768
-static int traceHead[TRACE_SIDE * TRACE_SIDE], traceNext[TRACE_REFS];
-static uint16_t traceLine[TRACE_REFS];
+#define MAX_RENDER_LINES 1024
+
+typedef struct {
+  float x1, y1;
+  float ex, ey;
+  float invDen;
+  float zBottom, zTop;
+  uint32_t flags;
+  uint8_t normalAxis;
+} TraceLineGeom;
+
+static TraceLineGeom traceGeom[MAX_RENDER_LINES];
+static uint16_t traceCellOffset[TRACE_SIDE * TRACE_SIDE];
+static uint16_t traceCellCount[TRACE_SIDE * TRACE_SIDE];
+static uint16_t traceCellLines[TRACE_REFS];
 static int traceReady, traceActive;
+
 static void buildTraceGrid(const Render *r) {
-  memset(traceHead, 0xff, sizeof(traceHead));
-  int used = 0;
   traceReady = 0;
-  for (int i = 0; i < r->numLines; i++) {
+  int numLines =
+      r->numLines < MAX_RENDER_LINES ? r->numLines : MAX_RENDER_LINES;
+  for (int i = 0; i < numLines; i++) {
     const Line *l = &r->lines[i];
-    if (l->flags & (HIDDEN | NO_DEPTH))
+    float ex = (float)(l->x2 - l->x1);
+    float ey = (float)(l->y2 - l->y1);
+    float den = ex * ex + ey * ey;
+    traceGeom[i].x1 = (float)l->x1;
+    traceGeom[i].y1 = (float)l->y1;
+    traceGeom[i].ex = ex;
+    traceGeom[i].ey = ey;
+    traceGeom[i].invDen = den >= 1.f ? 1.f / den : 0.f;
+    traceGeom[i].flags = l->flags;
+    traceGeom[i].normalAxis = fabsf(ex) > fabsf(ey) ? 1 : 0;
+    float bottom = RENDER_FLOOR(r), top = 64.f;
+    if (l->flags & 0xc0010000u) {
+      top = (float)r->ceilHeight;
+      bottom = (l->flags & 0x10000u) ? (float)r->floorHeight : 64.f;
+    }
+    traceGeom[i].zBottom = bottom;
+    traceGeom[i].zTop = top;
+  }
+
+  memset(traceCellCount, 0, sizeof(traceCellCount));
+  for (int i = 0; i < numLines; i++) {
+    if (traceGeom[i].flags & (HIDDEN | NO_DEPTH))
       continue;
-    int x0 = (int)floorf((fminf(l->x1, l->x2) - .01f - TRACE_ORIGIN) / 64),
-        x1 = (int)floorf((fmaxf(l->x1, l->x2) + .01f - TRACE_ORIGIN) / 64);
-    int y0 = (int)floorf((fminf(l->y1, l->y2) - .01f - TRACE_ORIGIN) / 64),
-        y1 = (int)floorf((fmaxf(l->y1, l->y2) + .01f - TRACE_ORIGIN) / 64);
+    float lx2 = traceGeom[i].x1 + traceGeom[i].ex;
+    float ly2 = traceGeom[i].y1 + traceGeom[i].ey;
+    int x0 = (int)floorf((fminf(traceGeom[i].x1, lx2) - .01f - TRACE_ORIGIN) *
+                         (1.f / 64.f));
+    int x1 = (int)floorf((fmaxf(traceGeom[i].x1, lx2) + .01f - TRACE_ORIGIN) *
+                         (1.f / 64.f));
+    int y0 = (int)floorf((fminf(traceGeom[i].y1, ly2) - .01f - TRACE_ORIGIN) *
+                         (1.f / 64.f));
+    int y1 = (int)floorf((fmaxf(traceGeom[i].y1, ly2) + .01f - TRACE_ORIGIN) *
+                         (1.f / 64.f));
     if (x0 < 0)
       x0 = 0;
     if (y0 < 0)
@@ -834,22 +689,64 @@ static void buildTraceGrid(const Render *r) {
       x1 = TRACE_SIDE - 1;
     if (y1 >= TRACE_SIDE)
       y1 = TRACE_SIDE - 1;
-    for (int y = y0; y <= y1; y++)
+    for (int y = y0; y <= y1; y++) {
+      int row = y * TRACE_SIDE;
       for (int x = x0; x <= x1; x++) {
-        if (used == TRACE_REFS)
-          return;
-        int cell = y * TRACE_SIDE + x;
-        traceLine[used] = (uint16_t)i;
-        traceNext[used] = traceHead[cell];
-        traceHead[cell] = used++;
+        traceCellCount[row + x]++;
       }
+    }
+  }
+
+  uint32_t total = 0;
+  for (int c = 0; c < TRACE_SIDE * TRACE_SIDE; c++) {
+    traceCellOffset[c] = (uint16_t)total;
+    total += traceCellCount[c];
+    if (total > TRACE_REFS)
+      return;
+  }
+
+  memset(traceCellCount, 0, sizeof(traceCellCount));
+  for (int i = 0; i < numLines; i++) {
+    if (traceGeom[i].flags & (HIDDEN | NO_DEPTH))
+      continue;
+    float lx2 = traceGeom[i].x1 + traceGeom[i].ex;
+    float ly2 = traceGeom[i].y1 + traceGeom[i].ey;
+    int x0 = (int)floorf((fminf(traceGeom[i].x1, lx2) - .01f - TRACE_ORIGIN) *
+                         (1.f / 64.f));
+    int x1 = (int)floorf((fmaxf(traceGeom[i].x1, lx2) + .01f - TRACE_ORIGIN) *
+                         (1.f / 64.f));
+    int y0 = (int)floorf((fminf(traceGeom[i].y1, ly2) - .01f - TRACE_ORIGIN) *
+                         (1.f / 64.f));
+    int y1 = (int)floorf((fmaxf(traceGeom[i].y1, ly2) + .01f - TRACE_ORIGIN) *
+                         (1.f / 64.f));
+    if (x0 < 0)
+      x0 = 0;
+    if (y0 < 0)
+      y0 = 0;
+    if (x1 >= TRACE_SIDE)
+      x1 = TRACE_SIDE - 1;
+    if (y1 >= TRACE_SIDE)
+      y1 = TRACE_SIDE - 1;
+    for (int y = y0; y <= y1; y++) {
+      int row = y * TRACE_SIDE;
+      for (int x = x0; x <= x1; x++) {
+        int cell = row + x;
+        int at = traceCellOffset[cell] + (traceCellCount[cell]++);
+        traceCellLines[at] = (uint16_t)i;
+      }
+    }
   }
   traceReady = 1;
 }
-static int lineOccludes(const Render *r, const Line *l, float ax, float ay,
-                        float az, float bx, float by, float bz) {
-  float dx = bx - ax, dy = by - ay, ex = (float)(l->x2 - l->x1),
-        ey = (float)(l->y2 - l->y1), den = dx * ey - dy * ex;
+
+static inline int lineGeomOccludes(const TraceLineGeom *l, float ax, float ay,
+                                   float az, float bx, float by, float bz) {
+  float zMin = az < bz ? az : bz;
+  float zMax = az > bz ? az : bz;
+  if (zMax <= l->zBottom - .5f || zMin >= l->zTop + .5f)
+    return 0;
+  float dx = bx - ax, dy = by - ay, ex = l->ex, ey = l->ey;
+  float den = dx * ey - dy * ex;
   if (den > .0001f) {
     float qx = l->x1 - ax, qy = l->y1 - ay;
     float nt = qx * ey - qy * ex;
@@ -858,13 +755,11 @@ static int lineOccludes(const Render *r, const Line *l, float ax, float ay,
     float nu = qx * dy - qy * dx;
     if (nu < 0.f || nu > den)
       return 0;
+    if (zMin > l->zBottom - .5f && zMax < l->zTop + .5f)
+      return 1;
     float t = nt / den;
-    float z = az + (bz - az) * t, bottom = RENDER_FLOOR(r), top = 64;
-    if (l->flags & 0xc0010000u) {
-      top = r->ceilHeight;
-      bottom = (l->flags & 0x10000u) ? r->floorHeight : 64;
-    }
-    return z > bottom - .5f && z < top + .5f;
+    float z = az + (bz - az) * t;
+    return z > l->zBottom - .5f && z < l->zTop + .5f;
   } else if (den < -.0001f) {
     float qx = l->x1 - ax, qy = l->y1 - ay;
     float nt = qx * ey - qy * ex;
@@ -873,27 +768,27 @@ static int lineOccludes(const Render *r, const Line *l, float ax, float ay,
     float nu = qx * dy - qy * dx;
     if (nu > 0.f || nu < den)
       return 0;
+    if (zMin > l->zBottom - .5f && zMax < l->zTop + .5f)
+      return 1;
     float t = nt / den;
-    float z = az + (bz - az) * t, bottom = RENDER_FLOOR(r), top = 64;
-    if (l->flags & 0xc0010000u) {
-      top = r->ceilHeight;
-      bottom = (l->flags & 0x10000u) ? r->floorHeight : 64;
-    }
-    return z > bottom - .5f && z < top + .5f;
+    float z = az + (bz - az) * t;
+    return z > l->zBottom - .5f && z < l->zTop + .5f;
   }
   return 0;
 }
+
 static int visibleReference(const Render *r, float ax, float ay, float az,
                             float bx, float by, float bz) {
-  for (int i = 0; i < r->numLines; i++) {
-    const Line *l = &r->lines[i];
-    if (l->flags & (HIDDEN | NO_DEPTH))
+  int num = r->numLines < MAX_RENDER_LINES ? r->numLines : MAX_RENDER_LINES;
+  for (int i = 0; i < num; i++) {
+    if (traceGeom[i].flags & (HIDDEN | NO_DEPTH))
       continue;
-    if (lineOccludes(r, l, ax, ay, az, bx, by, bz))
+    if (lineGeomOccludes(&traceGeom[i], ax, ay, az, bx, by, bz))
       return 0;
   }
   return 1;
 }
+
 int BrewLight_visible(const Render *r, float ax, float ay, float az, float bx,
                       float by, float bz) {
   if (!traceActive || !traceReady)
@@ -920,9 +815,11 @@ int BrewLight_visible(const Render *r, float ax, float ay, float az, float bx,
   int numTested = 0;
   uint64_t bloom = 0;
   for (int step = 0; step < TRACE_SIDE * 2 + 2; step++) {
-    for (int ref = traceHead[y * TRACE_SIDE + x]; ref >= 0;
-         ref = traceNext[ref]) {
-      int i = traceLine[ref];
+    int cell = y * TRACE_SIDE + x;
+    int start = traceCellOffset[cell];
+    int count = traceCellCount[cell];
+    for (int ref = 0; ref < count; ref++) {
+      int i = traceCellLines[start + ref];
       uint64_t b = 1ULL << (i & 63);
       if (bloom & b) {
         int already = 0;
@@ -939,7 +836,7 @@ int BrewLight_visible(const Render *r, float ax, float ay, float az, float bx,
       }
       if (numTested < 32)
         tested[numTested++] = i;
-      if (lineOccludes(r, &r->lines[i], ax, ay, az, bx, by, bz))
+      if (lineGeomOccludes(&traceGeom[i], ax, ay, az, bx, by, bz))
         return 0;
     }
     if (x == endX && y == endY)
@@ -1290,9 +1187,13 @@ int BrewLight_qaSourcePoint(int index, int field) {
   return -1;
 }
 #endif
-#ifdef OE_NO_SPRITE_SHADOWS
 #define FLOOR_SHADOW_SLOTS 64
 #define ROOM_DIST_SLOTS 64
+#ifdef OE_LIGHT_MT
+#define COL_CACHE_SLOTS 64
+#else
+#define COL_CACHE_SLOTS 1024
+#endif
 typedef struct {
   uint32_t validGen;
   int u, v, iz, sprites;
@@ -1304,38 +1205,43 @@ typedef struct {
   float d00, d10, d01, d11;
 } RoomDistCache;
 typedef struct {
+  uint32_t validGen;
+  float weight, low, high;
+  int16_t fixed, u, v;
+  uint16_t colFlags;
+} ShadowColumn;
+typedef struct {
+  uint32_t validGen;
+  float distance;
+  int16_t x, y;
+  uint16_t colAxis;
+  uint16_t pad;
+} CornerCache;
+typedef struct {
   FloorShadowCache floorShadowCache[8][FLOOR_SHADOW_SLOTS];
   RoomDistCache roomDistCache[ROOM_DIST_SLOTS];
+  ShadowColumn shadowColumns[COL_CACHE_SLOTS][8];
+  CornerCache cornerCache[COL_CACHE_SLOTS];
   uint16_t weaponEnergyQ10[3];
   uint32_t weaponValidGen;
 } LightWorkerCtx;
 static LightWorkerCtx lightWorkerCtx[LIGHT_THREADS];
-static float lightRadius2[8], lightEffR2[8], lightInvRadius[8], lightGain[8];
+static float lightRadius2[8], lightEffR2[8], lightBackfaceR2[8],
+    lightInvRadius[8], lightGain[8];
 static int staticCacheMap = -1, staticCacheLines = -1,
            staticCacheMapSprites = -1, staticCacheFlats = -1;
 static const Render *staticCacheRender = NULL;
 static int wallCandleLines[256], numWallCandleLines, wallCandleOverflow;
 static int spriteCandles[64], numSpriteCandles, spriteCandleOverflow;
+static int emitterSprites[256], numEmitterSprites, emitterSpriteOverflow;
 static uint16_t lavaTiles[1024], numLavaTiles;
-#else
-typedef struct {
-  int valid, u, v, iz, sprites;
-  float c00, c10, c01, c11;
-} FloorShadowCache;
-static FloorShadowCache floorShadowCache[8];
-typedef struct {
-  int valid, ix, iy, axis, layer;
-  float d00, d10, d01, d11;
-} RoomDistCache;
-static RoomDistCache roomDistCache;
-#endif
 #if defined(GAME_OE1)
 static int gayaHubActive = 0;
 
 static inline int gayaEmitterGroup(int tile) {
   if (tile == 165)
     return 1; /* Healing Crystal: merge all into central pool */
-  if (tile == 20 || tile == 191)
+  if (tile == 20 || tile == 191 || tile == 185)
     return 2; /* Gaya dragon: merge head + body */
   return 0;
 }
@@ -1354,6 +1260,61 @@ static void gather(Render *r) {
 #if defined(GAME_OE1)
   gayaHubActive = (view->mapId == 6008);
 #endif
+  if (staticCacheMap != view->mapId || staticCacheLines != r->numLines ||
+      staticCacheMapSprites != r->numMapSprites ||
+      staticCacheFlats != r->numFlats || staticCacheRender != r) {
+    staticCacheMap = view->mapId;
+    staticCacheLines = r->numLines;
+    staticCacheMapSprites = r->numMapSprites;
+    staticCacheFlats = r->numFlats;
+    staticCacheRender = r;
+    initSourceTables();
+    numEmitterSprites = 0;
+    emitterSpriteOverflow = 0;
+    for (int i = 0; i < r->numMapSprites && i < 800; i++) {
+      int tile = r->sprites[i].info & 255;
+      if (sourceByTile[tile]) {
+        if (numEmitterSprites < 256)
+          emitterSprites[numEmitterSprites++] = i;
+        else
+          emitterSpriteOverflow = 1;
+      }
+    }
+    numWallCandleLines = 0;
+    wallCandleOverflow = 0;
+    for (int i = 0; i < r->numLines; i++) {
+      const Line *l = &r->lines[i];
+      if (l->texture == 61 || l->texture == 69 || LINE_TEX2(l) == 61 ||
+          LINE_TEX2(l) == 69) {
+        if (numWallCandleLines < 256)
+          wallCandleLines[numWallCandleLines++] = i;
+        else
+          wallCandleOverflow = 1;
+      }
+    }
+    numSpriteCandles = 0;
+    spriteCandleOverflow = 0;
+    for (int i = 0; i < r->numMapSprites; i++) {
+      int tile = r->sprites[i].info & 255;
+      if (tile == 61 || tile == 69) {
+        if (numSpriteCandles < 64)
+          spriteCandles[numSpriteCandles++] = i;
+        else
+          spriteCandleOverflow = 1;
+      }
+    }
+    numLavaTiles = 0;
+    const uint16_t *lavaFlat = NULL;
+    for (int slot = 0; slot < r->numFlats; slot++)
+      if (r->flatIds[slot] == 199) {
+        lavaFlat = RENDER_FLAT_PTR(r, slot);
+        break;
+      }
+    if (lavaFlat)
+      for (int i = 0; i < 1024; i++)
+        if (RENDER_FLOOR_TILE(r, i) == lavaFlat)
+          lavaTiles[numLavaTiles++] = (uint16_t)i;
+  }
   numLights = 0;
   for (int i = 0; i < 8; i++) {
     const Impact *impact = &impacts[i];
@@ -1380,7 +1341,16 @@ static void gather(Render *r) {
     int count, minKey;
   } clusters[64];
   int numClusters = 0;
-  for (int i = 0; i < r->numSprites && i < 800; i++) {
+  int maxSpr = r->numSprites < 800 ? r->numSprites : 800;
+  int mapSpr = r->numMapSprites < maxSpr ? r->numMapSprites : maxSpr;
+  int dynCount = maxSpr - mapSpr;
+  int iterLimit =
+      emitterSpriteOverflow ? maxSpr : (numEmitterSprites + dynCount);
+  for (int idx = 0; idx < iterLimit; idx++) {
+    int i = emitterSpriteOverflow ? idx
+                                  : (idx < numEmitterSprites
+                                         ? emitterSprites[idx]
+                                         : mapSpr + (idx - numEmitterSprites));
     Sprite *s = &r->sprites[i];
     const Source *p = sourceForSprite(s);
     if (!p)
@@ -1531,50 +1501,6 @@ static void gather(Render *r) {
                p->b,  radius, power, flicker, clusters[c].minKey};
     candidate(l, processingX, processingY);
   }
-#ifdef OE_NO_SPRITE_SHADOWS
-  if (staticCacheMap != view->mapId || staticCacheLines != r->numLines ||
-      staticCacheMapSprites != r->numMapSprites ||
-      staticCacheFlats != r->numFlats || staticCacheRender != r) {
-    staticCacheMap = view->mapId;
-    staticCacheLines = r->numLines;
-    staticCacheMapSprites = r->numMapSprites;
-    staticCacheFlats = r->numFlats;
-    staticCacheRender = r;
-    numWallCandleLines = 0;
-    wallCandleOverflow = 0;
-    for (int i = 0; i < r->numLines; i++) {
-      const Line *l = &r->lines[i];
-      if (l->texture == 61 || l->texture == 69 || LINE_TEX2(l) == 61 ||
-          LINE_TEX2(l) == 69) {
-        if (numWallCandleLines < 256)
-          wallCandleLines[numWallCandleLines++] = i;
-        else
-          wallCandleOverflow = 1;
-      }
-    }
-    numSpriteCandles = 0;
-    spriteCandleOverflow = 0;
-    for (int i = 0; i < r->numMapSprites; i++) {
-      int tile = r->sprites[i].info & 255;
-      if (tile == 61 || tile == 69) {
-        if (numSpriteCandles < 64)
-          spriteCandles[numSpriteCandles++] = i;
-        else
-          spriteCandleOverflow = 1;
-      }
-    }
-    numLavaTiles = 0;
-    const uint16_t *lavaFlat = NULL;
-    for (int slot = 0; slot < r->numFlats; slot++)
-      if (r->flatIds[slot] == 199) {
-        lavaFlat = RENDER_FLAT_PTR(r, slot);
-        break;
-      }
-    if (lavaFlat)
-      for (int i = 0; i < 1024; i++)
-        if (RENDER_FLOOR_TILE(r, i) == lavaFlat)
-          lavaTiles[numLavaTiles++] = (uint16_t)i;
-  }
   if (!wallCandleOverflow) {
     for (int k = 0; k < numWallCandleLines; k++) {
       int i = wallCandleLines[k];
@@ -1611,45 +1537,6 @@ static void gather(Render *r) {
                1000 + i};
     candidate(l, processingX, processingY);
   }
-#else
-#ifdef OE_QA_INTERACTIONS
-  if (wallCandlesEnabled)
-#endif
-  {
-    for (int i = 0; i < r->numLines; i++) {
-      const Line *l = &r->lines[i];
-      if (l->texture == 61 || l->texture == 69 || LINE_TEX2(l) == 61 ||
-          LINE_TEX2(l) == 69)
-        wallCandles(r, l, 10000 + i * 256, 0);
-    }
-    for (int i = 0; i < r->numMapSprites; i++)
-      spriteWallCandle(r, &r->sprites[i], 300000 + i * 256);
-  }
-  /* Original molten-crack flat 199 is emissive only where that material
-   * occurs.
-   */
-  const uint16_t *lavaFlat = NULL;
-  for (int slot = 0; slot < r->numFlats; slot++)
-    if (r->flatIds[slot] == 199) {
-      lavaFlat = RENDER_FLAT_PTR(r, slot);
-      break;
-    }
-  if (lavaFlat)
-    for (int i = 0; i < 1024; i++)
-      if (RENDER_FLOOR_TILE(r, i) == lavaFlat) {
-        Light l = {(i % 32) * 64.f + 32,
-                   (i / 32) * 64.f + 32,
-                   RENDER_FLOOR(r) + 4.f,
-                   1,
-                   .25f,
-                   .04f,
-                   160,
-                   1.0f,
-                   1,
-                   1000 + i};
-        candidate(l, processingX, processingY);
-      }
-#endif
   for (int i = 0; i < numLights; i++)
     for (int j = i + 1; j < numLights; j++)
       if (lights[j].key < lights[i].key) {
@@ -1668,11 +1555,27 @@ static void gather(Render *r) {
   int camAng = r ? r->viewAngle : (c ? c->viewAngle : 0);
   float a = (camAng & 1023) * (6.28318530718f / 1024);
 #if defined(GAME_OE1)
-  Light l = {camX + cosf(a) * 14, camY - sinf(a) * 14, camZ - 5.f, 1, .62f,
-             .28f, 160, .62f, 0, 2000};
+  Light l = {camX + cosf(a) * 14,
+             camY - sinf(a) * 14,
+             camZ - 5.f,
+             1,
+             .62f,
+             .28f,
+             160,
+             .62f,
+             0,
+             2000};
 #else
-  Light l = {camX + cosf(a) * 14, camY - sinf(a) * 14, camZ - 5.f, 1, .62f,
-             .28f, 105, .28f, 0, 2000};
+  Light l = {camX + cosf(a) * 14,
+             camY - sinf(a) * 14,
+             camZ - 5.f,
+             1,
+             .62f,
+             .28f,
+             105,
+             .28f,
+             0,
+             2000};
 #endif
   if (p && p->weapons) {
     int w = p->ce.weapon;
@@ -1752,20 +1655,13 @@ static void gather(Render *r) {
   h = hashWord(h, (uint32_t)r->ceilHeight);
   if (h != geometryHash) {
     geometryHash = h;
-#ifdef OE_NO_SPRITE_SHADOWS
     memset((void *)wallCheckedAtomic, 0, sizeof(wallCheckedAtomic));
     memset(wallLightHash, 0, sizeof(wallLightHash));
-#else
-    roomDistCache.valid = 0;
-    memset(wallChecked, 0, sizeof(wallChecked));
-#endif
     buildTraceGrid(r);
   }
-#ifdef OE_NO_SPRITE_SHADOWS
   uint32_t targetWallHash[8] = {0};
   unsigned char slotUsed[8] = {0};
   for (int j = 0; j < numLights; j++) {
-    casterCount[j] = 0;
     lightWallSlot[j] = -1;
     if (lights[j].key == 2000) {
       lightWallSlot[j] = 7;
@@ -1835,110 +1731,8 @@ static void gather(Render *r) {
     h = hashWord(h, (uint32_t)(int)(lights[i].z / 8));
   }
   cachedHash = h;
-#else
-  for (int j = 0; j < numLights; j++) {
-#ifndef OE_QA_INTERACTIONS
-    if (lights[j].key == 2000) {
-      casterCount[j] = 0;
-      continue;
-    }
-#endif
-    uint32_t wallHash = hashWord(geometryHash, (uint32_t)lights[j].key);
-    wallHash = hashWord(wallHash, floatBits(lights[j].x));
-    wallHash = hashWord(wallHash, floatBits(lights[j].y));
-    wallHash = hashWord(wallHash, floatBits(lights[j].z));
-    if (wallHash != wallLightHash[j]) {
-      wallLightHash[j] = wallHash;
-      if (numDirtyWall[j] <= MAX_DIRTY_WALL_BYTES) {
-        for (int k = 0; k < numDirtyWall[j]; k++)
-          wallSampleReady[j][dirtyWallBytes[j][k]] = 0;
-      } else
-        memset(wallSampleReady[j], 0, sizeof(wallSampleReady[j]));
-      numDirtyWall[j] = 0;
-    }
-  }
-  static int activeCasterList[800];
-  int numActiveCasters = 0;
-  for (int i = 0; i < r->numSprites && i < 800; i++) {
-    casters[i] = spriteCaster(r, &r->sprites[i]);
-    if (casters[i].active && posedCasters[i].active)
-      casters[i] = posedCasters[i];
-    if (casters[i].active)
-      activeCasterList[numActiveCasters++] = i;
-  }
-  unsigned invalidMask = 0;
-  for (int j = 0; j < numLights; j++) {
-    casterCount[j] = 0;
-#ifndef OE_QA_INTERACTIONS
-    if (lights[j].key == 2000)
-      continue;
-#endif
-    uint32_t lh = wallLightHash[j];
-    lh = hashWord(lh, (uint32_t)(int)(lights[j].x / 16));
-    lh = hashWord(lh, (uint32_t)(int)(lights[j].y / 16));
-    lh = hashWord(lh, (uint32_t)(int)(lights[j].z / 8));
-    for (int k = 0; k < numActiveCasters; k++) {
-      int i = activeCasterList[k];
-      Caster *c = &casters[i];
-      float dx = c->x - lights[j].x, dy = c->y - lights[j].y,
-            range = lights[j].radius + c->size;
-      if (dx * dx + dy * dy > range * range)
-        continue;
-      lightCasters[j][casterCount[j]++] = i;
-      lh = hashWord(lh, (unsigned)i);
-      lh = hashWord(lh, (unsigned)(int)c->x);
-      lh = hashWord(lh, (unsigned)(int)c->y);
-      lh = hashWord(lh, (unsigned)(int)c->z);
-      lh = hashWord(lh, (unsigned)c->frame);
-      lh = hashWord(lh, (unsigned)(int)(c->size * 16));
-      lh = hashWord(lh, c->flags);
-      h = hashWord(h, (unsigned)i);
-      h = hashWord(h, (unsigned)(int)c->x);
-      h = hashWord(h, (unsigned)(int)c->y);
-      h = hashWord(h, (unsigned)(int)c->z);
-      h = hashWord(h, (unsigned)c->frame);
-      h = hashWord(h, (unsigned)(int)(c->size * 16));
-      h = hashWord(h, c->flags);
-    }
-    if (lh != lightCacheHash[j]) {
-      lightCacheHash[j] = lh;
-      invalidMask |= 1u << j;
-    }
-  }
-  for (int j = numLights; j < 8; j++)
-    if (lightCacheHash[j]) {
-      lightCacheHash[j] = 0;
-      invalidMask |= 1u << j;
-    }
-  for (int i = 0; i < numLights; i++) {
-    h = hashWord(h, (uint32_t)lights[i].key);
-    h = hashWord(h, (uint32_t)(int)(lights[i].x / 16));
-    h = hashWord(h, (uint32_t)(int)(lights[i].y / 16));
-    h = hashWord(h, (uint32_t)(int)(lights[i].z / 8));
-  }
-  cachedHash = h;
-  if (invalidMask) {
-    if (numDirtyChecked <= MAX_DIRTY_CELLS) {
-      int kept = 0;
-      unsigned char keepMask = (unsigned char)~invalidMask;
-      for (int k = 0; k < numDirtyChecked; k++) {
-        int cell = dirtyCheckedCells[k];
-        unsigned char rem = checked[cell] & keepMask;
-        checked[cell] = rem;
-        if (rem)
-          dirtyCheckedCells[kept++] = cell;
-      }
-      numDirtyChecked = kept;
-    } else {
-      memset(checked, 0, sizeof(checked));
-      numDirtyChecked = 0;
-      memset(lightCacheHash, 0, sizeof(lightCacheHash));
-    }
-  }
-#endif
 }
 static float visibilityAt(int ix, int iy, int iz, int light, int sprites) {
-#ifdef OE_NO_SPRITE_SHADOWS
   (void)sprites;
   const Light *l = &lights[light];
   if (ix < 0 || ix >= 128 || iy < 0 || iy >= 128 || iz < 0 || iz >= 24)
@@ -1967,104 +1761,8 @@ static float visibilityAt(int ix, int iy, int iz, int light, int sprites) {
       dirtyWallCells[slot][idx] = cell;
   }
   return vis == 2u ? 1.f : 0.f;
-#else
-  const Light *l = &lights[light];
-  if (ix < 0 || ix >= 128 || iy < 0 || iy >= 128 || iz < 0 || iz >= 24)
-    return 1;
-  int cell = (iz * 128 + iy) * 128 + ix;
-  unsigned bit = 1u << light;
-  if (!(checked[cell] & bit)) {
-    float x = ix * 16 + 8.f, y = iy * 16 + 8.f, z = iz * 8 + 4.f;
-    int hits = 0, wallHits = 0;
-    unsigned shift = light * 3, mask = (wallSamples[cell] >> shift) & 7u,
-             readyBit = 1u << (cell & 7);
-    int byteIdx = cell >> 3;
-#ifdef OE_QA_INTERACTIONS
-    if (!(wallSampleReady[light][byteIdx] & readyBit)) {
-      mask = 0;
-      for (int sample = -1; sample <= 1; sample++)
-        if (BrewLight_visible(renderer, x, y, z, l->x + sample * 3,
-                              l->y - sample * 2, l->z))
-          mask |= 1u << (sample + 1);
-      wallSamples[cell] =
-          (wallSamples[cell] & ~(7u << shift)) | (mask << shift);
-      if (!wallSampleReady[light][byteIdx]) {
-        if (numDirtyWall[light] < MAX_DIRTY_WALL_BYTES)
-          dirtyWallBytes[light][numDirtyWall[light]++] = byteIdx;
-        else
-          numDirtyWall[light] = MAX_DIRTY_WALL_BYTES + 1;
-      }
-      wallSampleReady[light][byteIdx] |= (uint8_t)readyBit;
-    }
-    for (int sample = -1; sample <= 1; sample++) {
-      float bx = l->x + sample * 3, by = l->y - sample * 2;
-      int visible = (mask >> (sample + 1)) & 1;
-      wallHits += visible;
-      if (visible)
-        for (int i = 0; i < casterCount[light]; i++)
-          if (casterBlocks(renderer, &casters[lightCasters[light][i]], x, y, z,
-                           bx, by, l->z)) {
-            visible = 0;
-            break;
-          }
-      hits += visible;
-    }
-#else
-    if (!(wallSampleReady[light][byteIdx] & readyBit)) {
-      mask = BrewLight_visible(renderer, x, y, z, l->x, l->y, l->z) ? 7u : 0u;
-      wallSamples[cell] =
-          (wallSamples[cell] & ~(7u << shift)) | (mask << shift);
-      if (!wallSampleReady[light][byteIdx]) {
-        if (numDirtyWall[light] < MAX_DIRTY_WALL_BYTES)
-          dirtyWallBytes[light][numDirtyWall[light]++] = byteIdx;
-        else
-          numDirtyWall[light] = MAX_DIRTY_WALL_BYTES + 1;
-      }
-      wallSampleReady[light][byteIdx] |= (uint8_t)readyBit;
-    }
-    int visible = (mask >> 1) & 1;
-    wallHits = visible ? 3 : 0;
-    if (visible)
-      for (int i = 0; i < casterCount[light]; i++)
-        if (casterBlocks(renderer, &casters[lightCasters[light][i]], x, y, z,
-                         l->x, l->y, l->z)) {
-          visible = 0;
-          break;
-        }
-    hits = visible ? 3 : 0;
-#endif
-    if (!checked[cell]) {
-      if (numDirtyChecked < MAX_DIRTY_CELLS)
-        dirtyCheckedCells[numDirtyChecked++] = cell;
-      else
-        numDirtyChecked = MAX_DIRTY_CELLS + 1;
-    }
-    visibility[cell] = (uint16_t)((visibility[cell] & ~(3u << (light * 2))) |
-                                  ((unsigned)hits << (light * 2)));
-    checked[cell] |= (unsigned char)bit;
-    wallVisibility[cell] =
-        (uint16_t)((wallVisibility[cell] & ~(3u << (light * 2))) |
-                   ((unsigned)wallHits << (light * 2)));
-  }
-  return (((sprites ? visibility[cell] : wallVisibility[cell]) >> (light * 2)) &
-          3) /
-         3.f;
-#endif
 }
 static float mixf(float a, float b, float t) { return a + (b - a) * t; }
-#ifdef OE_NO_SPRITE_SHADOWS
-typedef struct {
-  uint32_t validGen;
-  int axis, fixed, u, v, sprites;
-  float weight, low, high;
-} ShadowColumn;
-#else
-typedef struct {
-  int valid, axis, fixed, u, v, sprites;
-  float weight, low, high;
-} ShadowColumn;
-#endif
-static ShadowColumn shadowColumns[704][8];
 typedef struct {
   int init, snz, ix, iy, iz, axis, fixed, u, v, floorSlot;
   float tx, ty;
@@ -2124,11 +1822,15 @@ static float shadowCoordCtx(const ShadowSampleCoord *sc, int light, int column,
     return mixf(mixf(fc->c00, fc->c10, sc->tx), mixf(fc->c01, fc->c11, sc->tx),
                 sc->ty);
   }
+  uint16_t colFlags = (uint16_t)((column << 2) | (sc->axis << 1) | sprites);
   ShadowColumn *cache =
-      column >= 0 && column < 704 ? &shadowColumns[column][light] : NULL;
-  if (cache && cache->validGen == shadowFrameGen && cache->axis == sc->axis &&
-      cache->fixed == sc->fixed && cache->u == sc->u && cache->v == sc->v &&
-      cache->weight == sc->tx && cache->sprites == sprites)
+      (unsigned)column < 704u
+          ? &ctx->shadowColumns[column & (COL_CACHE_SLOTS - 1)][light]
+          : NULL;
+  if (cache && cache->validGen == shadowFrameGen &&
+      cache->colFlags == colFlags && cache->fixed == (int16_t)sc->fixed &&
+      cache->u == (int16_t)sc->u && cache->v == (int16_t)sc->v &&
+      cache->weight == sc->tx)
     return mixf(cache->low, cache->high, sc->ty);
   float low, high;
   if (sc->axis) {
@@ -2145,20 +1847,17 @@ static float shadowCoordCtx(const ShadowSampleCoord *sc, int light, int column,
                 sc->tx);
   }
   if (cache)
-    *cache = (ShadowColumn){shadowFrameGen, sc->axis, sc->fixed, sc->u, sc->v,
-                            sprites,        sc->tx,   low,       high};
+    *cache = (ShadowColumn){
+        shadowFrameGen, sc->tx,         low,     high, (int16_t)sc->fixed,
+        (int16_t)sc->u, (int16_t)sc->v, colFlags};
   return mixf(low, high, sc->ty);
 }
 static float wallDistanceAt(int x, int y, int axis, int layer) {
   if (x < 0 || y < 0 || x > 128 || y > 128)
     return 40;
   int cell = y * 129 + x;
-#ifdef OE_NO_SPRITE_SHADOWS
   if (atomic_load_explicit(&wallCheckedAtomic[layer][cell],
                            memory_order_acquire) != 2u) {
-#else
-  if (!wallChecked[layer][cell]) {
-#endif
     float px = x * 16.f, py = y * 16.f, best[2] = {40 * 40, 40 * 40};
     int gx0 = fastFloorf((px - 40.5f - TRACE_ORIGIN) * (1.f / 64.f)),
         gx1 = fastFloorf((px + 40.5f - TRACE_ORIGIN) * (1.f / 64.f));
@@ -2166,34 +1865,36 @@ static float wallDistanceAt(int x, int y, int axis, int layer) {
         gy1 = fastFloorf((py + 40.5f - TRACE_ORIGIN) * (1.f / 64.f));
     if (traceReady && gx0 >= 0 && gy0 >= 0 && gx1 < TRACE_SIDE &&
         gy1 < TRACE_SIDE) {
+      uint64_t visited[MAX_RENDER_LINES / 64] = {0};
+      float layerZ =
+          layer == 0 ? RENDER_FLOOR(renderer) : RENDER_CEIL(renderer);
       for (int gy = gy0; gy <= gy1; gy++)
-        for (int gx = gx0; gx <= gx1; gx++)
-          for (int ref = traceHead[gy * TRACE_SIDE + gx]; ref >= 0;
-               ref = traceNext[ref]) {
-            const Line *l = &renderer->lines[traceLine[ref]];
-            if (layer < 2) {
-              float z = layer == 0 ? RENDER_FLOOR(renderer)
-                                   : RENDER_CEIL(renderer),
-                    bottom = RENDER_FLOOR(renderer), top = 64;
-              if (l->flags & 0xc0010000u) {
-                top = renderer->ceilHeight;
-                bottom = (l->flags & 0x10000u) ? renderer->floorHeight : 64;
-              }
-              if (z < bottom - .5f || z > top + .5f)
-                continue;
-            }
-            float dx = l->x2 - l->x1, dy = l->y2 - l->y1,
-                  den = dx * dx + dy * dy;
-            if (den < 1)
+        for (int gx = gx0; gx <= gx1; gx++) {
+          int cidx = gy * TRACE_SIDE + gx;
+          int start = traceCellOffset[cidx];
+          int count = traceCellCount[cidx];
+          for (int k = 0; k < count; k++) {
+            int lineIdx = traceCellLines[start + k];
+            uint64_t bit = 1ULL << (lineIdx & 63);
+            if (visited[lineIdx >> 6] & bit)
               continue;
-            float t =
-                clampf(((px - l->x1) * dx + (py - l->y1) * dy) / den, 0, 1);
-            float qx = px - l->x1 - dx * t, qy = py - l->y1 - dy * t,
+            visited[lineIdx >> 6] |= bit;
+            const TraceLineGeom *g = &traceGeom[lineIdx];
+            if (g->invDen == 0.f)
+              continue;
+            if (layer < 2 &&
+                (layerZ < g->zBottom - .5f || layerZ > g->zTop + .5f))
+              continue;
+            float dx = g->ex, dy = g->ey;
+            float t = clampf(
+                ((px - g->x1) * dx + (py - g->y1) * dy) * g->invDen, 0.f, 1.f);
+            float qx = px - g->x1 - dx * t, qy = py - g->y1 - dy * t,
                   d = qx * qx + qy * qy;
-            int normal = fabsf(dx) > fabsf(dy) ? 1 : 0;
+            int normal = g->normalAxis;
             if (d < best[normal])
               best[normal] = d;
           }
+        }
     } else {
       for (int i = 0; i < renderer->numLines; i++) {
         const Line *l = &renderer->lines[i];
@@ -2221,7 +1922,6 @@ static float wallDistanceAt(int x, int y, int axis, int layer) {
           best[normal] = d;
       }
     }
-#ifdef OE_NO_SPRITE_SHADOWS
     float d0 = sqrtf(best[0]), d1 = sqrtf(best[1]), dMin = fminf(d0, d1);
     uint8_t exp = 0;
     if (atomic_compare_exchange_strong_explicit(&wallCheckedAtomic[layer][cell],
@@ -2234,18 +1934,10 @@ static float wallDistanceAt(int x, int y, int axis, int layer) {
                             memory_order_release);
     }
     return axis < 0 ? dMin : (axis == 0 ? d0 : d1);
-#else
-    wallAxisDistance[layer][0][cell] = sqrtf(best[0]);
-    wallAxisDistance[layer][1][cell] = sqrtf(best[1]);
-    wallDistance[layer][cell] = fminf(wallAxisDistance[layer][0][cell],
-                                      wallAxisDistance[layer][1][cell]);
-    wallChecked[layer][cell] = 1;
-#endif
   }
   return axis < 0 ? wallDistance[layer][cell]
                   : wallAxisDistance[layer][axis][cell];
 }
-#ifdef OE_NO_SPRITE_SHADOWS
 static float roomDistanceCtx(const Surface *s, int axis, LightWorkerCtx *ctx) {
   float x = surfX(s) * (1.f / 16.f), y = surfY(s) * (1.f / 16.f);
   int ix = fastFloorf(x), iy = fastFloorf(y), snz = surfNz(s);
@@ -2268,29 +1960,6 @@ static float roomDistanceCtx(const Surface *s, int axis, LightWorkerCtx *ctx) {
 }
 static float contactShadeCtx(const Surface *s, int column,
                              LightWorkerCtx *ctx) {
-#else
-static float roomDistance(const Surface *s, int axis) {
-  float x = surfX(s) / 16, y = surfY(s) / 16;
-  int ix = (int)floorf(x), iy = (int)floorf(y), snz = surfNz(s);
-  int layer = snz ? (snz > 0 ? 0 : 1) : 2;
-  if (!roomDistCache.valid || roomDistCache.ix != ix ||
-      roomDistCache.iy != iy || roomDistCache.axis != axis ||
-      roomDistCache.layer != layer) {
-    roomDistCache.valid = 1;
-    roomDistCache.ix = ix;
-    roomDistCache.iy = iy;
-    roomDistCache.axis = axis;
-    roomDistCache.layer = layer;
-    roomDistCache.d00 = wallDistanceAt(ix, iy, axis, layer);
-    roomDistCache.d10 = wallDistanceAt(ix + 1, iy, axis, layer);
-    roomDistCache.d01 = wallDistanceAt(ix, iy + 1, axis, layer);
-    roomDistCache.d11 = wallDistanceAt(ix + 1, iy + 1, axis, layer);
-  }
-  return mixf(mixf(roomDistCache.d00, roomDistCache.d10, x - ix),
-              mixf(roomDistCache.d01, roomDistCache.d11, x - ix), y - iy);
-}
-static float contactShade(const Surface *s, int column) {
-#endif
 #ifdef OE_QA_INTERACTIONS
   if (costMode == 2)
     return 1;
@@ -2298,14 +1967,21 @@ static float contactShade(const Surface *s, int column) {
   int kind = surfKind(s);
   if (kind == 4 || kind == 3)
     return 1.f;
+#if defined(GAME_OE1)
+  if (gayaHubActive) {
+    if (surfNz(s))
+      return .92f;
+    float sz = surfZ(s);
+    float distance = fminf(fabsf(sz - RENDER_FLOOR(renderer)),
+                           fabsf(RENDER_CEIL(renderer) - sz));
+    float t = clampf(distance * (1.f / 20.f), 0.f, 1.f);
+    t = t * t * (3.f - 2.f * t);
+    return .35f + .65f * t;
+  }
+#endif
   float distance;
-#ifdef OE_NO_SPRITE_SHADOWS
   if (surfNz(s))
     distance = roomDistanceCtx(s, -1, ctx);
-#else
-  if (surfNz(s))
-    distance = roomDistance(s, -1);
-#endif
   else {
     float sz = surfZ(s);
     distance = fminf(fabsf(sz - RENDER_FLOOR(renderer)),
@@ -2316,34 +1992,20 @@ static float contactShade(const Surface *s, int column) {
       /* Wall x/y and normal are constant down a column. Reuse their distance
        * across rows; floor and ceiling receivers still sample in world space.
        */
-      if (column >= 0) {
-        CornerCache *c = &cornerCache[column];
-#ifdef OE_NO_SPRITE_SHADOWS
-        if (c->validGen != shadowFrameGen || c->x != s->x || c->y != s->y ||
-            c->axis != axis) {
+      if ((unsigned)column < 704u) {
+        uint16_t colAxis = (uint16_t)((column << 1) | axis);
+        CornerCache *c = &ctx->cornerCache[column & (COL_CACHE_SLOTS - 1)];
+        if (c->validGen != shadowFrameGen || c->colAxis != colAxis ||
+            c->x != s->x || c->y != s->y) {
           c->x = s->x;
           c->y = s->y;
-          c->axis = axis;
+          c->colAxis = colAxis;
           c->distance = roomDistanceCtx(s, axis, ctx);
           c->validGen = shadowFrameGen;
         }
-#else
-        if (!c->valid || c->x != s->x || c->y != s->y || c->axis != axis) {
-          c->x = s->x;
-          c->y = s->y;
-          c->axis = axis;
-          c->distance = roomDistance(s, axis);
-          c->valid = 1;
-        }
-#endif
         corner = c->distance;
-#ifdef OE_NO_SPRITE_SHADOWS
       } else
         corner = roomDistanceCtx(s, axis, ctx);
-#else
-      } else
-        corner = roomDistance(s, axis);
-#endif
       distance = fminf(distance, corner);
     }
   }
@@ -2351,14 +2013,11 @@ static float contactShade(const Surface *s, int column) {
   t = t * t * (3 - 2 * t);
   return .35f + .65f * t;
 }
-#ifdef OE_NO_SPRITE_SHADOWS
 static inline float contactShade(const Surface *s, int column) {
   return contactShadeCtx(s, column, &lightWorkerCtx[0]);
 }
-#endif
 #ifdef OE_LIGHTING_TEST
 int BrewLight_testContact(Render *r) {
-#ifdef OE_NO_SPRITE_SHADOWS
   Render *saved = renderer;
   renderer = r;
   if (++shadowFrameGen == 0) {
@@ -2366,12 +2025,6 @@ int BrewLight_testContact(Render *r) {
     shadowFrameGen = 1;
   }
   memset((void *)wallCheckedAtomic, 0, sizeof(wallCheckedAtomic));
-#else
-  Render *saved = renderer;
-  renderer = r;
-  roomDistCache.valid = 0;
-  memset(wallChecked, 0, sizeof(wallChecked));
-#endif
   Surface floor, far, ceiling, wall, middle, corner;
   surfSet(&floor, 64, 64, 0, 0, 0, 127, 1);
   far = floor;
@@ -2387,7 +2040,6 @@ int BrewLight_testContact(Render *r) {
               contactShade(&far, -1) > .99f;
   valid = valid && contactShade(&wall, -1) < .36f &&
           contactShade(&middle, -1) > .99f && contactShade(&corner, -1) < .36f;
-#ifdef OE_NO_SPRITE_SHADOWS
   r->numLines = 1;
   r->lines[0].flags = 0x40000000u;
   r->ceilHeight = r->effCeil = 128;
@@ -2404,20 +2056,39 @@ int BrewLight_testContact(Render *r) {
   }
   memset((void *)wallCheckedAtomic, 0, sizeof(wallCheckedAtomic));
   return valid;
-#else
-  r->numLines = 1;
-  r->lines[0].flags = 0x40000000u;
-  r->ceilHeight = r->effCeil = 128;
-  roomDistCache.valid = 0;
-  memset(wallChecked, 0, sizeof(wallChecked));
-  valid = valid && contactShade(&floor, -1) > .99f;
-  renderer = saved;
-  roomDistCache.valid = 0;
-  memset(wallChecked, 0, sizeof(wallChecked));
-  return valid;
-#endif
 }
 #endif
+static int lutReady;
+static float byteToLinear[256];
+static uint16_t byteToLinearQ10[256];
+static uint8_t sqrtLUT[4097];
+static uint8_t toneLUT[4097];
+static float expLUT[257];
+#if defined(GAME_OE1) && !defined(OE_QA_INTERACTIONS)
+static uint32_t prevHubOriginal[MAX_PIXELS];
+static int prevHubValid, prevHubViewX, prevHubViewY, prevHubViewZ,
+    prevHubViewAngle, prevHubHalfH, prevHubFade, prevHubW, prevHubH;
+#endif
+static void initLUT(void) {
+  if (lutReady)
+    return;
+  for (int i = 0; i < 256; i++) {
+    float v = i / 255.f;
+    byteToLinear[i] = v * v;
+    byteToLinearQ10[i] = (uint16_t)(v * v * 1024.f + .5f);
+  }
+  for (int i = 0; i <= 256; i++)
+    expLUT[i] = expf(-i * (4.f / 256.f));
+  for (int i = 0; i <= 4096; i++) {
+    sqrtLUT[i] = (uint8_t)(sqrtf(i / 4096.f) * 255.f + .5f);
+    float lin = i * (4.f / 4096.f);
+    float mapped = lin > 0.75f
+                       ? 0.75f + 0.25f * (lin - 0.75f) / ((lin - 0.75f) + 0.8f)
+                       : lin;
+    toneLUT[i] = (uint8_t)(clampf(sqrtf(mapped), 0.f, 1.f) * 255.f + .5f);
+  }
+  lutReady = 1;
+}
 static void glow(const Light *l, float flicker) {
   /* Screen-space halo is depth-tested against real walls. Held light is lit
    * in weapon space instead, avoiding a floating glow in the camera centre.
@@ -2439,42 +2110,63 @@ static void glow(const Light *l, float flicker) {
   float focalW =
       renderer->projH > 0 ? (float)(renderer->projH >> 16) : (float)width;
 #endif
-  float cx = width * .5f + (dx * rx + dy * ry) * focalW / (2 * d),
-        cy = height * .5f - (l->z - renderer->viewZ) * focalW / (2 * d);
-  float scale = focalW / 176.f;
-  float radius = clampf(focalW * 5.5f / d, 1.5f * scale, 12 * scale),
+  float inv2d = focalW / (2.f * d);
+  float cx = width * .5f + (dx * rx + dy * ry) * inv2d,
+        cy = height * .5f - (l->z - renderer->viewZ) * inv2d;
+  float scale = focalW * (1.f / 176.f);
+  float radius = clampf(focalW * 5.5f / d, 1.5f * scale, 12.f * scale),
         colour[3] = {l->r, l->g, l->b};
+  float invRadius = 1.f / radius;
+  float fadeNorm = fadeLevel * (1.f / 255.f);
+  float baseStrength =
+      .008f * l->power * flicker * weight * fadeNorm * fadeNorm;
   int x0 = (int)fmaxf(0, cx - radius), x1 = (int)fminf(width - 1, cx + radius),
       y0 = (int)fmaxf(0, cy - radius), y1 = (int)fminf(height - 1, cy + radius);
-  for (int y = y0; y <= y1; y++)
+  for (int y = y0; y <= y1; y++) {
+    float ay = (y - cy) * invRadius, ay2 = ay * ay;
+    const Surface *rowSurf = &surfaces[y * width];
+    uint32_t *rowLit = &lit[y * width];
     for (int x = x0; x <= x1; x++) {
-      float ax = (x - cx) / radius, ay = (y - cy) / radius,
-            r2 = ax * ax + ay * ay;
-      if (r2 > 1)
+      float ax = (x - cx) * invRadius, r2 = ax * ax + ay2;
+      if (r2 > 1.f)
         continue;
-      const Surface *s = &surfaces[y * width + x];
+      const Surface *s = &rowSurf[x];
       int kind = surfKind(s);
       float receiver =
           (surfX(s) - renderer->viewX) * fx + (surfY(s) - renderer->viewY) * fy;
       if (kind == 4 || (kind && receiver + 12 < d))
         continue;
-      float strength = .008f * l->power * flicker * weight * expf(-r2 * 4) *
-                       (fadeLevel / 255.f) * (fadeLevel / 255.f),
-            out = 0;
-      uint32_t c = lit[y * width + x], pixel = 0xff000000u;
+#ifdef OE_QA_INTERACTIONS
+      float strength = baseStrength * expf(-r2 * 4.f), out = 0;
+      uint32_t c = rowLit[x], pixel = 0xff000000u;
       for (int ch = 0; ch < 3; ch++) {
         float v = ((c >> (ch * 8)) & 255) / 255.f;
         out = sqrtf(fminf(1, v * v + colour[ch] * strength));
         pixel |= (uint32_t)(out * 255 + .5f) << (ch * 8);
       }
-      lit[y * width + x] = pixel;
+      rowLit[x] = pixel;
+#else
+      float strength = baseStrength * expLUT[(int)(r2 * 256.f + .5f)];
+      uint32_t c = rowLit[x], pixel = 0xff000000u;
+      for (int ch = 0; ch < 3; ch++) {
+        float v2 = byteToLinear[(c >> (ch * 8)) & 255];
+        int idx = (int)(fminf(1.f, v2 + colour[ch] * strength) * 4096.f + .5f);
+        pixel |= (uint32_t)sqrtLUT[idx] << (ch * 8);
+      }
+      rowLit[x] = pixel;
+#if defined(GAME_OE1)
+      if (gayaHubActive)
+        prevHubOriginal[y * width + x] = 0;
+#endif
+#endif
     }
+  }
 }
 static int weaponEnergyValid;
 static float weaponEnergy[3];
-#ifdef OE_NO_SPRITE_SHADOWS
 static void incidentEnergyCtx(const Surface *s, const float *flicker,
                               int column, float *energy, LightWorkerCtx *ctx) {
+  (void)flicker;
   float ao = contactShadeCtx(s, column, ctx);
   energy[0] = .17f * ao;
   energy[1] = .20f * ao;
@@ -2491,18 +2183,26 @@ static void incidentEnergyCtx(const Surface *s, const float *flicker,
     const Light *l = &lights[j];
     float dx = l->x - sx, dy = l->y - sy, dz = l->z - sz,
           d2 = dx * dx + dy * dy + dz * dz;
-    if (d2 >= lightRadius2[j] || (weight <= 1.f && d2 >= lightEffR2[j]))
+    if (d2 >= lightRadius2[j] || d2 >= lightEffR2[j])
+      continue;
+    float dot = s->nx * dx + s->ny * dy + snz * dz;
+    if (kind != 3 && dot <= 0.f && d2 >= lightBackfaceR2[j])
       continue;
     float d = sqrtf(d2);
     float attenuation = 1.f - d * lightInvRadius[j];
     float maxE = weight * attenuation * attenuation * lightGain[j];
     if (maxE < 0.020f)
       continue;
-    float invD127 = (1.f / 127.f) / (d + .01f);
-    float ndotl = (s->nx * dx + s->ny * dy + snz * dz) * invD127;
-    float lambert = (kind == 3) ? clampf(ndotl * .35f + .65f, 0.f, 1.f)
-                                : clampf(ndotl, 0.f, 1.f);
-    float e = maxE * (.18f + .82f * lambert);
+    float e;
+    if (kind != 3 && dot <= 0.f) {
+      e = maxE * .18f;
+    } else {
+      float invD127 = (1.f / 127.f) / (d + .01f);
+      float ndotl = dot * invD127;
+      float lambert = (kind == 3) ? clampf(ndotl * .35f + .65f, 0.f, 1.f)
+                                  : clampf(ndotl, 0.f, 1.f);
+      e = maxE * (.18f + .82f * lambert);
+    }
     if (e < 0.020f)
       continue;
 #ifdef OE_QA_INTERACTIONS
@@ -2562,78 +2262,6 @@ static inline void incidentEnergy(const Surface *s, const float *flicker,
                                   int column, float *energy) {
   incidentEnergyCtx(s, flicker, column, energy, &lightWorkerCtx[0]);
 }
-#else
-static void incidentEnergy(const Surface *s, const float *flicker, int column,
-                           float *energy) {
-  float ao = contactShade(s, column);
-  energy[0] = .17f * ao;
-  energy[1] = .20f * ao;
-  energy[2] = .27f * ao;
-  float sx = surfX(s), sy = surfY(s), sz = surfZ(s);
-  int kind = surfKind(s), snz = surfNz(s);
-  float weight = (kind == 3 || kind == 4) ? 1.f : worldLightWeight(sx, sy);
-  if (weight <= 0)
-    return;
-  for (int j = 0; j < numLights; j++) {
-    const Light *l = &lights[j];
-    float dx = l->x - sx, dy = l->y - sy, dz = l->z - sz,
-          d2 = dx * dx + dy * dy + dz * dz;
-    if (d2 >= l->radius * l->radius)
-      continue;
-    float d = sqrtf(d2) + .01f;
-    float ndotl = (s->nx * dx + s->ny * dy + snz * dz) / (127 * d);
-    float lambert = (kind == 3) ? clampf(ndotl * .35f + .65f, 0.f, 1.f)
-                                : clampf(ndotl, 0.f, 1.f);
-    float attenuation = 1 - d / l->radius;
-    float e = weight * attenuation * attenuation * l->power * flicker[j] *
-              2.1f * (.18f + .82f * lambert);
-#ifdef OE_QA_INTERACTIONS
-    if (kind != 4)
-      e *= shadow(s, j, column) * (.75f + .25f * ao);
-#else
-    if (kind != 4 && l->key != 2000) {
-      if (kind == 3 && d < 48.f) {
-        /* Direct illumination from emitter sprite's own light source */
-#if defined(GAME_OE1)
-      } else if (gayaHubActive) {
-        e *= (.75f + .25f * ao);
-#endif
-      } else {
-        e *= shadow(s, j, column) * (.75f + .25f * ao);
-      }
-    }
-#endif
-    energy[0] += l->r * e;
-    energy[1] += l->g * e;
-    energy[2] += l->b * e;
-  }
-  if (kind == 3) {
-    for (int ch = 0; ch < 3; ch++)
-      if (energy[ch] < 0.35f)
-        energy[ch] = 0.35f;
-  }
-  if (kind != 4 && kind != 3) {
-    for (int ch = 0; ch < 3; ch++) {
-      if (energy[ch] > 1.6f) {
-        energy[ch] =
-            1.6f + (energy[ch] - 1.6f) / (1.f + (energy[ch] - 1.6f) * 0.8f);
-        if (energy[ch] > 2.2f)
-          energy[ch] = 2.2f;
-      }
-    }
-  }
-  if (kind == 4 && g_app && g_app->player && g_app->player->weapons) {
-    int w = g_app->player->ce.weapon;
-#if defined(GAME_OE1)
-    if (w == 0 || w == 2 || w == 3 || w == 7 || w >= 8)
-#else
-    if (w == 0 || w == 5 || w == 6 || w == 7 || w >= 8)
-#endif
-      for (int ch = 0; ch < 3; ch++)
-        energy[ch] = fmaxf(energy[ch] * 1.4f, 1.25f);
-  }
-}
-#endif
 /* Irradiance is smooth at a much finer scale than the 16-unit shadow field.
  * Reuse one-world-unit endpoints only where several full-resolution pixels
  * land between them. Material pixels and receiver boundaries stay untouched.
@@ -2647,7 +2275,6 @@ typedef struct {
 static EnergySpan verticalEnergy[704], horizontalEnergy[880];
 static void energyProbe(Surface *probe, float coordinate,
                         const FloorDirection *direction) {
-#ifdef OE_NO_SPRITE_SHADOWS
   float px = surfX(probe), py = surfY(probe), pz = surfZ(probe);
   int snz = surfNz(probe), kind = surfKind(probe);
   if (!direction) {
@@ -2659,17 +2286,6 @@ static void energyProbe(Surface *probe, float coordinate,
   }
   surfSet(probe, px, py, pz, probe->nx, probe->ny, (signed char)snz,
           (unsigned char)kind);
-#else
-  if (!direction) {
-    probe->z = coordinate;
-    return;
-  }
-  float delta = coordinate - (direction->axis ? direction->x : direction->y);
-  probe->x =
-      direction->axis ? coordinate : direction->x + delta * direction->ratio;
-  probe->y =
-      direction->axis ? direction->y + delta * direction->ratio : coordinate;
-#endif
 }
 static void sampleEnergy(const Surface *s, const float *flicker, int column,
                          int row, float *energy) {
@@ -2780,33 +2396,6 @@ static void sampleEnergy(const Surface *s, const float *flicker, int column,
   for (int ch = 0; ch < 3; ch++)
     energy[ch] = mixf(cache->low[ch], cache->high[ch], coordinate - index);
 }
-static int lutReady;
-static float byteToLinear[256];
-#ifdef OE_NO_SPRITE_SHADOWS
-static uint16_t byteToLinearQ10[256];
-#endif
-static uint8_t sqrtLUT[4097];
-static uint8_t toneLUT[4097];
-static void initLUT(void) {
-  if (lutReady)
-    return;
-  for (int i = 0; i < 256; i++) {
-    float v = i / 255.f;
-    byteToLinear[i] = v * v;
-#ifdef OE_NO_SPRITE_SHADOWS
-    byteToLinearQ10[i] = (uint16_t)(v * v * 1024.f + .5f);
-#endif
-  }
-  for (int i = 0; i <= 4096; i++) {
-    sqrtLUT[i] = (uint8_t)(sqrtf(i / 4096.f) * 255.f + .5f);
-    float lin = i * (4.f / 4096.f);
-    float mapped = lin > 0.75f
-                       ? 0.75f + 0.25f * (lin - 0.75f) / ((lin - 0.75f) + 0.8f)
-                       : lin;
-    toneLUT[i] = (uint8_t)(clampf(sqrtf(mapped), 0.f, 1.f) * 255.f + .5f);
-  }
-  lutReady = 1;
-}
 static inline uint32_t shadePixelWithEnergy(const Surface *s, uint32_t c,
                                             const float *energy) {
   float sx = surfX(s), sy = surfY(s);
@@ -2898,11 +2487,28 @@ static int staffShift(void) {
   return bottom >= 0 ? height - 1 - bottom : 0;
 }
 #ifndef OE_QA_INTERACTIONS
-#ifdef OE_NO_SPRITE_SHADOWS
-static uint16_t lowResEnergyQ10[400 * 240][3];
-static unsigned char lowResReady[400 * 240];
-static uint8_t lowResGen = 0;
-static int lowResGenW = 0, lowResGenH = 0;
+#define COARSE_GRID_COLS 104
+#define COARSE_GRID_ROWS 120
+
+typedef struct {
+  uint16_t e[3];
+  uint8_t ready;
+  uint8_t pad;
+} CoarseNode;
+
+static CoarseNode coarseGrid[COARSE_GRID_ROWS * COARSE_GRID_COLS];
+static uint8_t coarseGen = 0;
+static int coarseGenW = 0, coarseGenH = 0;
+
+static inline int coarseCol(int x, int xShift, int w) {
+  return (x == w - 1 && (x & ((1 << xShift) - 1)) != 0) ? (w >> xShift)
+                                                        : (x >> xShift);
+}
+
+static inline int coarseIdx(int x, int y, int xShift, int w) {
+  return (y >> 1) * COARSE_GRID_COLS + coarseCol(x, xShift, w);
+}
+
 static void samplePointQ10(const Surface *s, const float *flicker, int column,
                            uint16_t outQ10[3], LightWorkerCtx *ctx) {
   int kind = surfKind(s);
@@ -2945,6 +2551,10 @@ static inline int compatibleSurfaceMax(const Surface *a, const Surface *b,
   int kb = surfRawKind(b);
   if (((0x2eu >> kb) & 1) == 0)
     return 0;
+#if defined(GAME_OE1)
+  if (gayaHubActive)
+    return surfRawKind(a) != 0 && surfRawKind(c) != 0;
+#endif
   uint32_t hiA, hiB, hiC;
   memcpy(&hiA, (const char *)a + 4, 4);
   memcpy(&hiB, (const char *)b + 4, 4);
@@ -2976,9 +2586,9 @@ static inline uint32_t effColor(const uint32_t *original, const Surface *s,
   return (shift && surfRawKind(s) == 4) ? weaponBackground[i] : original[i];
 }
 static inline void fillMidGridPoint(const Surface *surfBase, int i, int w2,
-                                    int x, const float *flicker,
+                                    int x, int y, const float *flicker,
                                     unsigned char readyTag, int shift,
-                                    LightWorkerCtx *ctx) {
+                                    int xShift, int w, LightWorkerCtx *ctx) {
   const Surface *s = effSurf(surfBase, i, shift);
   if (!surfKind(s))
     return;
@@ -2986,23 +2596,31 @@ static inline void fillMidGridPoint(const Surface *surfBase, int i, int w2,
   int maxDist = (kb == 1 || kb == 5) ? (72 * 4) : (48 * 4);
   const Surface *sU = effSurf(surfBase, i - w2, shift);
   const Surface *sD = effSurf(surfBase, i + w2, shift);
-  if (lowResReady[i - w2] == readyTag && lowResReady[i + w2] == readyTag &&
+  int cidx = coarseIdx(x, y, xShift, w);
+  int cidxU = cidx - COARSE_GRID_COLS;
+  int cidxD = cidx + COARSE_GRID_COLS;
+  if (coarseGrid[cidxU].ready == readyTag &&
+      coarseGrid[cidxD].ready == readyTag &&
       compatibleSurfaceMax(sU, s, sD, maxDist)) {
-    const uint16_t *eu = lowResEnergyQ10[i - w2];
-    const uint16_t *ed = lowResEnergyQ10[i + w2];
-    lowResEnergyQ10[i][0] = (uint16_t)((eu[0] + ed[0]) >> 1);
-    lowResEnergyQ10[i][1] = (uint16_t)((eu[1] + ed[1]) >> 1);
-    lowResEnergyQ10[i][2] = (uint16_t)((eu[2] + ed[2]) >> 1);
+    const uint16_t *eu = coarseGrid[cidxU].e;
+    const uint16_t *ed = coarseGrid[cidxD].e;
+    coarseGrid[cidx].e[0] = (uint16_t)((eu[0] + ed[0]) >> 1);
+    coarseGrid[cidx].e[1] = (uint16_t)((eu[1] + ed[1]) >> 1);
+    coarseGrid[cidx].e[2] = (uint16_t)((eu[2] + ed[2]) >> 1);
   } else {
-    samplePointQ10(s, flicker, x, lowResEnergyQ10[i], ctx);
+    samplePointQ10(s, flicker, x, coarseGrid[cidx].e, ctx);
   }
-  lowResReady[i] = readyTag;
+  coarseGrid[cidx].ready = readyTag;
 }
 static inline int compatibleSpan(const Surface *s0, const Surface *sMid,
                                  const Surface *sEnd, int step) {
   int k0 = surfRawKind(s0);
   if (k0 != 1 && k0 != 2 && k0 != 3 && k0 != 5)
     return 0;
+#if defined(GAME_OE1)
+  if (gayaHubActive)
+    return surfRawKind(sMid) != 0 && surfRawKind(sEnd) != 0;
+#endif
   uint32_t hi0, hiM, hiE;
   memcpy(&hi0, (const char *)s0 + 4, 4);
   memcpy(&hiM, (const char *)sMid + 4, 4);
@@ -3046,13 +2664,14 @@ static inline uint32_t shadeQ10Pixel(uint32_t c, const uint16_t *e) {
   return 0xff000000u | (uint32_t)toneLUT[i0] | (((uint32_t)toneLUT[i1]) << 8) |
          (((uint32_t)toneLUT[i2]) << 16);
 }
-static void lightRunRange(LightWorkerCtx *ctx, const uint32_t *original,
-                          const float *flicker, int w, int h, int shift,
-                          int xStep, int xShift, unsigned char readyTag,
-                          int cx0, int cx1, int phase) {
+static void lightRunRangeImpl(LightWorkerCtx *ctx, const uint32_t *original,
+                              const float *flicker, int w, int h,
+                              const int shift, int xStep, int xShift,
+                              unsigned char readyTag, int cx0, int cx1,
+                              int phase) {
   const Surface *surfBase = surfaces;
   if (phase == 0) {
-    if (w > 176 && h >= 5) {
+    if (h >= 5) {
       int lastEven = (h - 1) & ~1;
       int w2 = w * 2;
       int hasRightEdge = (cx1 == w && w > 0 && ((w - 1) & (xStep - 1)) != 0);
@@ -3062,16 +2681,27 @@ static void lightRunRange(LightWorkerCtx *ctx, const uint32_t *original,
           const Surface *s = effSurf(surfBase, i, shift);
           if (!surfKind(s))
             continue;
-          samplePointQ10(s, flicker, x, lowResEnergyQ10[i], ctx);
-          lowResReady[i] = readyTag;
+          int cidx = coarseIdx(x, y, xShift, w);
+          samplePointQ10(s, flicker, x, coarseGrid[cidx].e, ctx);
+          coarseGrid[cidx].ready = readyTag;
         }
         if (hasRightEdge) {
           int x = w - 1, i = y * w + x;
           const Surface *s = effSurf(surfBase, i, shift);
           if (surfKind(s)) {
-            samplePointQ10(s, flicker, x, lowResEnergyQ10[i], ctx);
-            lowResReady[i] = readyTag;
+            int cidx = coarseIdx(x, y, xShift, w);
+            samplePointQ10(s, flicker, x, coarseGrid[cidx].e, ctx);
+            coarseGrid[cidx].ready = readyTag;
           }
+        }
+        if (y >= 4) {
+          int ym = y - 2, row = ym * w;
+          for (int x = cx0; x < cx1; x += xStep)
+            fillMidGridPoint(surfBase, row + x, w2, x, ym, flicker, readyTag,
+                             shift, xShift, w, ctx);
+          if (hasRightEdge)
+            fillMidGridPoint(surfBase, row + w - 1, w2, w - 1, ym, flicker,
+                             readyTag, shift, xShift, w, ctx);
         }
       }
       if ((lastEven & 3) != 0) {
@@ -3081,424 +2711,284 @@ static void lightRunRange(LightWorkerCtx *ctx, const uint32_t *original,
           const Surface *s = effSurf(surfBase, i, shift);
           if (!surfKind(s))
             continue;
-          samplePointQ10(s, flicker, x, lowResEnergyQ10[i], ctx);
-          lowResReady[i] = readyTag;
+          int cidx = coarseIdx(x, y, xShift, w);
+          samplePointQ10(s, flicker, x, coarseGrid[cidx].e, ctx);
+          coarseGrid[cidx].ready = readyTag;
         }
         if (hasRightEdge) {
           int x = w - 1, i = y * w + x;
           const Surface *s = effSurf(surfBase, i, shift);
           if (surfKind(s)) {
-            samplePointQ10(s, flicker, x, lowResEnergyQ10[i], ctx);
-            lowResReady[i] = readyTag;
+            int cidx = coarseIdx(x, y, xShift, w);
+            samplePointQ10(s, flicker, x, coarseGrid[cidx].e, ctx);
+            coarseGrid[cidx].ready = readyTag;
           }
         }
-      }
-      for (int y = 2; y < lastEven; y += 4) {
-        int row = y * w;
-        for (int x = cx0; x < cx1; x += xStep)
-          fillMidGridPoint(surfBase, row + x, w2, x, flicker, readyTag, shift,
-                           ctx);
-        if (hasRightEdge)
-          fillMidGridPoint(surfBase, row + w - 1, w2, w - 1, flicker, readyTag,
-                           shift, ctx);
       }
       return;
     }
     for (int y = 0; y < h; y += 2) {
       for (int x = cx0; x < cx1; x += xStep) {
         int i = y * w + x;
-        const Surface *s = &surfBase[i];
-        if (shift && surfKind(s) == 4)
-          s = &underWeapon[i];
+        const Surface *s = effSurf(surfBase, i, shift);
         if (!surfKind(s))
           continue;
-        samplePointQ10(s, flicker, x, lowResEnergyQ10[i], ctx);
-        lowResReady[i] = readyTag;
+        int cidx = coarseIdx(x, y, xShift, w);
+        samplePointQ10(s, flicker, x, coarseGrid[cidx].e, ctx);
+        coarseGrid[cidx].ready = readyTag;
       }
       if (cx1 == w && w > 0 && ((w - 1) & (xStep - 1)) != 0) {
         int x = w - 1, i = y * w + x;
-        const Surface *s = &surfBase[i];
-        if (shift && surfKind(s) == 4)
-          s = &underWeapon[i];
+        const Surface *s = effSurf(surfBase, i, shift);
         if (surfKind(s)) {
-          samplePointQ10(s, flicker, x, lowResEnergyQ10[i], ctx);
-          lowResReady[i] = readyTag;
+          int cidx = coarseIdx(x, y, xShift, w);
+          samplePointQ10(s, flicker, x, coarseGrid[cidx].e, ctx);
+          coarseGrid[cidx].ready = readyTag;
         }
       }
     }
     return;
   }
-  if (w > 176) {
-    for (int cc0 = cx0; cc0 < cx1; cc0 += 32) {
-      int cc1 = cc0 + 32;
-      if (cc1 > cx1)
-        cc1 = cx1;
-      int cw = cc1 - cc0;
-      uint16_t rowE[2][33][3];
-      uint64_t rowReady[2] = {0, 0};
-      uint8_t rowSpanOk[2] = {0, 0};
-      for (int y = 0; y < h; y += 2) {
-        int cur = (y >> 1) & 1;
-        int prev = cur ^ 1;
-        int row = y * w;
-        uint64_t rMask = 0;
-        uint8_t curSpanOk = 0;
-        for (int lx = 0; lx < cw; lx += xStep) {
-          int x = cc0 + lx, i0 = row + x;
-          int xEnd = x + xStep < w ? x + xStep : w;
-          int spanW = xEnd - x;
-          int has0 = (lowResReady[i0] == readyTag);
-          uint32_t c0 = effColor(original, &surfBase[i0], i0, shift);
-          if (has0) {
-            rowE[cur][lx][0] = lowResEnergyQ10[i0][0];
-            rowE[cur][lx][1] = lowResEnergyQ10[i0][1];
-            rowE[cur][lx][2] = lowResEnergyQ10[i0][2];
-            rMask |= 1ULL << lx;
-            lit[i0] = shadeQ10Pixel(c0, rowE[cur][lx]);
+  for (int cc0 = cx0; cc0 < cx1; cc0 += 32) {
+    int cc1 = cc0 + 32;
+    if (cc1 > cx1)
+      cc1 = cx1;
+    int cw = cc1 - cc0;
+    uint16_t rowE[2][33][3];
+    uint64_t rowReady[2] = {0, 0};
+    uint8_t rowSpanOk[2] = {0, 0};
+    for (int y = 0; y < h; y += 2) {
+      int cur = (y >> 1) & 1;
+      int prev = cur ^ 1;
+      int row = y * w;
+      uint64_t rMask = 0;
+      uint8_t curSpanOk = 0;
+      for (int lx = 0; lx < cw; lx += xStep) {
+        int x = cc0 + lx, i0 = row + x;
+        int xEnd = x + xStep < w ? x + xStep : w;
+        int spanW = xEnd - x;
+        int cidx0 = coarseIdx(x, y, xShift, w);
+        int has0 = (coarseGrid[cidx0].ready == readyTag);
+        uint32_t c0 = effColor(original, &surfBase[i0], i0, shift);
+        if (has0) {
+          rowE[cur][lx][0] = coarseGrid[cidx0].e[0];
+          rowE[cur][lx][1] = coarseGrid[cidx0].e[1];
+          rowE[cur][lx][2] = coarseGrid[cidx0].e[2];
+          rMask |= 1ULL << lx;
+          lit[i0] = shadeQ10Pixel(c0, rowE[cur][lx]);
+        } else {
+          lit[i0] = c0;
+        }
+        int cidxEnd = (x + xStep < w) ? coarseIdx(x + xStep, y, xShift, w) : -1;
+        int hasEnd = (cidxEnd >= 0) && (coarseGrid[cidxEnd].ready == readyTag);
+        if (hasEnd) {
+          rowE[cur][lx + xStep][0] = coarseGrid[cidxEnd].e[0];
+          rowE[cur][lx + xStep][1] = coarseGrid[cidxEnd].e[1];
+          rowE[cur][lx + xStep][2] = coarseGrid[cidxEnd].e[2];
+          rMask |= 1ULL << (lx + xStep);
+        }
+        const Surface *s0 = effSurf(surfBase, i0, shift);
+        const Surface *sEnd =
+            (x + xStep < w) ? effSurf(surfBase, i0 + xStep, shift) : NULL;
+        if (has0 && hasEnd &&
+            compatibleSpan(s0, effSurf(surfBase, i0 + (xStep >> 1), shift),
+                           sEnd, xStep)) {
+          int e0 = rowE[cur][lx][0], d0 = rowE[cur][lx + xStep][0] - e0;
+          int e1 = rowE[cur][lx][1], d1 = rowE[cur][lx + xStep][1] - e1;
+          int e2 = rowE[cur][lx][2], d2 = rowE[cur][lx + xStep][2] - e2;
+          int hasWep = 0;
+          if (!shift) {
+            for (int k = 1; k < xStep; k++) {
+              uint16_t *dstE = rowE[cur][lx + k];
+              dstE[0] = (uint16_t)(e0 + ((d0 * k) >> xShift));
+              dstE[1] = (uint16_t)(e1 + ((d1 * k) >> xShift));
+              dstE[2] = (uint16_t)(e2 + ((d2 * k) >> xShift));
+              lit[i0 + k] = shadeQ10Pixel(original[i0 + k], dstE);
+            }
           } else {
-            lit[i0] = c0;
-          }
-          int hasEnd = (x + xStep < w) && (lowResReady[i0 + xStep] == readyTag);
-          if (hasEnd) {
-            rowE[cur][lx + xStep][0] = lowResEnergyQ10[i0 + xStep][0];
-            rowE[cur][lx + xStep][1] = lowResEnergyQ10[i0 + xStep][1];
-            rowE[cur][lx + xStep][2] = lowResEnergyQ10[i0 + xStep][2];
-            rMask |= 1ULL << (lx + xStep);
-          }
-          const Surface *s0 = effSurf(surfBase, i0, shift);
-          const Surface *sEnd =
-              (x + xStep < w) ? effSurf(surfBase, i0 + xStep, shift) : NULL;
-          if (has0 && hasEnd &&
-              compatibleSpan(s0, effSurf(surfBase, i0 + (xStep >> 1), shift),
-                             sEnd, xStep)) {
-            int e0 = rowE[cur][lx][0], d0 = rowE[cur][lx + xStep][0] - e0;
-            int e1 = rowE[cur][lx][1], d1 = rowE[cur][lx + xStep][1] - e1;
-            int e2 = rowE[cur][lx][2], d2 = rowE[cur][lx + xStep][2] - e2;
-            int hasWep = 0;
-            if (!shift) {
-              for (int k = 1; k < xStep; k++) {
-                uint16_t *dstE = rowE[cur][lx + k];
-                dstE[0] = (uint16_t)(e0 + ((d0 * k) >> xShift));
-                dstE[1] = (uint16_t)(e1 + ((d1 * k) >> xShift));
-                dstE[2] = (uint16_t)(e2 + ((d2 * k) >> xShift));
+            for (int k = 1; k < xStep; k++) {
+              uint16_t *dstE = rowE[cur][lx + k];
+              dstE[0] = (uint16_t)(e0 + ((d0 * k) >> xShift));
+              dstE[1] = (uint16_t)(e1 + ((d1 * k) >> xShift));
+              dstE[2] = (uint16_t)(e2 + ((d2 * k) >> xShift));
+              if (surfRawKind(&surfBase[i0 + k]) == 4) {
+                hasWep = 1;
+                lit[i0 + k] = shadeQ10Pixel(weaponBackground[i0 + k], dstE);
+              } else {
                 lit[i0 + k] = shadeQ10Pixel(original[i0 + k], dstE);
               }
-            } else {
-              for (int k = 1; k < xStep; k++) {
-                uint16_t *dstE = rowE[cur][lx + k];
-                dstE[0] = (uint16_t)(e0 + ((d0 * k) >> xShift));
-                dstE[1] = (uint16_t)(e1 + ((d1 * k) >> xShift));
-                dstE[2] = (uint16_t)(e2 + ((d2 * k) >> xShift));
-                if (surfRawKind(&surfBase[i0 + k]) == 4) {
-                  hasWep = 1;
-                  lit[i0 + k] = shadeQ10Pixel(weaponBackground[i0 + k], dstE);
-                } else {
-                  lit[i0 + k] = shadeQ10Pixel(original[i0 + k], dstE);
-                }
-              }
-              if (surfRawKind(&surfBase[i0]) == 4)
-                hasWep = 1;
             }
-            rMask |= ((1ULL << xStep) - 2ULL) << lx;
-            if (!hasWep)
-              curSpanOk |= (uint8_t)(1u << (lx >> 3));
+            if (surfRawKind(&surfBase[i0]) == 4)
+              hasWep = 1;
+          }
+          rMask |= ((1ULL << xStep) - 2ULL) << lx;
+          if (!hasWep)
+            curSpanOk |= (uint8_t)(1u << (lx >> 3));
+          continue;
+        }
+        for (int k = 1; k < spanW; k++) {
+          int i = i0 + k;
+          const Surface *s = effSurf(surfBase, i, shift);
+          int sk = surfKind(s);
+          uint32_t ck = effColor(original, &surfBase[i], i, shift);
+          if (!sk) {
+            lit[i] = ck;
             continue;
           }
-          for (int k = 1; k < spanW; k++) {
-            int i = i0 + k;
-            const Surface *s = effSurf(surfBase, i, shift);
-            int sk = surfKind(s);
-            uint32_t ck = effColor(original, &surfBase[i], i, shift);
-            if (!sk) {
-              lit[i] = ck;
-              continue;
-            }
-            uint16_t *dstE = rowE[cur][lx + k];
-            if (lowResReady[i] == readyTag) {
-              dstE[0] = lowResEnergyQ10[i][0];
-              dstE[1] = lowResEnergyQ10[i][1];
-              dstE[2] = lowResEnergyQ10[i][2];
-            } else if (sk == 4 && ctx->weaponValidGen == shadowFrameGen) {
-              dstE[0] = ctx->weaponEnergyQ10[0];
-              dstE[1] = ctx->weaponEnergyQ10[1];
-              dstE[2] = ctx->weaponEnergyQ10[2];
-            } else if (((rMask >> (lx + k - 1)) & 1ULL) &&
-                       sameSurfNormal(s, effSurf(surfBase, i - 1, shift))) {
-              dstE[0] = rowE[cur][lx + k - 1][0];
-              dstE[1] = rowE[cur][lx + k - 1][1];
-              dstE[2] = rowE[cur][lx + k - 1][2];
-            } else if (has0 && sameSurfNormal(s, s0)) {
-              dstE[0] = rowE[cur][lx][0];
-              dstE[1] = rowE[cur][lx][1];
-              dstE[2] = rowE[cur][lx][2];
-            } else if (sEnd && hasEnd && sameSurfNormal(s, sEnd)) {
-              dstE[0] = rowE[cur][lx + xStep][0];
-              dstE[1] = rowE[cur][lx + xStep][1];
-              dstE[2] = rowE[cur][lx + xStep][2];
-            } else {
-              samplePointQ10(s, flicker, x + k, dstE, ctx);
-            }
-            rMask |= 1ULL << (lx + k);
-            lit[i] = shadeQ10Pixel(ck, dstE);
+          uint16_t *dstE = rowE[cur][lx + k];
+          int isRightEdge = (x + k == w - 1);
+          int cRight = isRightEdge ? coarseIdx(w - 1, y, xShift, w) : -1;
+          if (isRightEdge && coarseGrid[cRight].ready == readyTag) {
+            dstE[0] = coarseGrid[cRight].e[0];
+            dstE[1] = coarseGrid[cRight].e[1];
+            dstE[2] = coarseGrid[cRight].e[2];
+          } else if (sk == 4 && ctx->weaponValidGen == shadowFrameGen) {
+            dstE[0] = ctx->weaponEnergyQ10[0];
+            dstE[1] = ctx->weaponEnergyQ10[1];
+            dstE[2] = ctx->weaponEnergyQ10[2];
+          } else if (((rMask >> (lx + k - 1)) & 1ULL) &&
+                     sameSurfNormal(s, effSurf(surfBase, i - 1, shift))) {
+            dstE[0] = rowE[cur][lx + k - 1][0];
+            dstE[1] = rowE[cur][lx + k - 1][1];
+            dstE[2] = rowE[cur][lx + k - 1][2];
+          } else if (has0 && sameSurfNormal(s, s0)) {
+            dstE[0] = rowE[cur][lx][0];
+            dstE[1] = rowE[cur][lx][1];
+            dstE[2] = rowE[cur][lx][2];
+          } else if (sEnd && hasEnd && sameSurfNormal(s, sEnd)) {
+            dstE[0] = rowE[cur][lx + xStep][0];
+            dstE[1] = rowE[cur][lx + xStep][1];
+            dstE[2] = rowE[cur][lx + xStep][2];
+          } else {
+            samplePointQ10(s, flicker, x + k, dstE, ctx);
           }
+          rMask |= 1ULL << (lx + k);
+          lit[i] = shadeQ10Pixel(ck, dstE);
         }
-        rowReady[cur] = rMask;
-        rowSpanOk[cur] = curSpanOk;
-        if (y >= 2) {
-          int oddRow = (y - 1) * w + cc0;
-          uint64_t rp = rowReady[prev], rc = rMask;
-          uint64_t rb = rp & rc;
-          uint8_t bothSpanOk = (uint8_t)(rowSpanOk[prev] & curSpanOk);
-          for (int bx = 0; bx < cw; bx += xStep) {
-            int spanW = (bx + xStep <= cw) ? xStep : (cw - bx);
-            if (spanW == 8 && (bothSpanOk & (1u << (bx >> 3)))) {
-              const Surface *sRow = &surfBase[oddRow + bx];
-              int kb0 = surfRawKind(&sRow[0]);
-              if (kb0 != 4) {
-                uint32_t hi0;
-                memcpy(&hi0, (const char *)&sRow[0] + 4, 4);
-                uint32_t hiDiff = 0;
-                for (int k = 1; k < 8; k++) {
-                  uint32_t hk;
-                  memcpy(&hk, (const char *)&sRow[k] + 4, 4);
-                  hiDiff |= (hk ^ hi0);
-                }
-                int maxDist0 = (kb0 == 1 || kb0 == 5) ? (72 * 4) : (48 * 4);
-                if ((hiDiff & 0xffff0007u) == 0 &&
-                    compatibleSurfaceMax(&sRow[-w], &sRow[0], &sRow[w],
-                                         maxDist0) &&
-                    compatibleSurfaceMax(&sRow[4 - w], &sRow[4], &sRow[4 + w],
-                                         maxDist0) &&
-                    compatibleSurfaceMax(&sRow[7 - w], &sRow[7], &sRow[7 + w],
-                                         maxDist0)) {
-                  const uint32_t *origP = &original[oddRow + bx];
-                  uint32_t *litP = &lit[oddRow + bx];
-                  for (int k = 0; k < 8; k++) {
-                    const uint16_t *eu = rowE[prev][bx + k];
-                    const uint16_t *ed = rowE[cur][bx + k];
-                    uint16_t e[3] = {(uint16_t)((eu[0] + ed[0]) >> 1),
-                                     (uint16_t)((eu[1] + ed[1]) >> 1),
-                                     (uint16_t)((eu[2] + ed[2]) >> 1)};
-                    litP[k] = shadeQ10Pixel(origP[k], e);
-                  }
-                  continue;
-                }
+      }
+      rowReady[cur] = rMask;
+      rowSpanOk[cur] = curSpanOk;
+      if (y >= 2) {
+        int oddRow = (y - 1) * w + cc0;
+        uint64_t rp = rowReady[prev], rc = rMask;
+        uint64_t rb = rp & rc;
+        uint8_t bothSpanOk = (uint8_t)(rowSpanOk[prev] & curSpanOk);
+        for (int bx = 0; bx < cw; bx += xStep) {
+          int spanW = (bx + xStep <= cw) ? xStep : (cw - bx);
+          if (spanW == 8 && (bothSpanOk & (1u << (bx >> 3)))) {
+            const Surface *sRow = &surfBase[oddRow + bx];
+            int kb0 = surfRawKind(&sRow[0]);
+            if (kb0 != 4) {
+              uint32_t hi0;
+              memcpy(&hi0, (const char *)&sRow[0] + 4, 4);
+              uint32_t hiDiff = 0;
+              for (int k = 1; k < 8; k++) {
+                uint32_t hk;
+                memcpy(&hk, (const char *)&sRow[k] + 4, 4);
+                hiDiff |= (hk ^ hi0);
               }
-            }
-            int prevValid = 0;
-            uint16_t prevE[3] = {0, 0, 0};
-            for (int k = 0; k < spanW; k++) {
-              int lx = bx + k;
-              int i = oddRow + lx;
-              const Surface *s = effSurf(surfBase, i, shift);
-              int kb = surfRawKind(s);
-              uint32_t ck = effColor(original, &surfBase[i], i, shift);
-              if (!kb) {
-                lit[i] = ck;
-                prevValid = 0;
+              int maxDist0 = (kb0 == 1 || kb0 == 5) ? (72 * 4) : (48 * 4);
+#if defined(GAME_OE1)
+              int spanCompat = gayaHubActive ||
+                               ((hiDiff & 0xffff0007u) == 0 &&
+                                compatibleSurfaceMax(&sRow[-w], &sRow[0],
+                                                     &sRow[w], maxDist0) &&
+                                compatibleSurfaceMax(&sRow[4 - w], &sRow[4],
+                                                     &sRow[4 + w], maxDist0) &&
+                                compatibleSurfaceMax(&sRow[7 - w], &sRow[7],
+                                                     &sRow[7 + w], maxDist0));
+              if (spanCompat) {
+#else
+              if ((hiDiff & 0xffff0007u) == 0 &&
+                  compatibleSurfaceMax(&sRow[-w], &sRow[0], &sRow[w],
+                                       maxDist0) &&
+                  compatibleSurfaceMax(&sRow[4 - w], &sRow[4], &sRow[4 + w],
+                                       maxDist0) &&
+                  compatibleSurfaceMax(&sRow[7 - w], &sRow[7], &sRow[7 + w],
+                                       maxDist0)) {
+#endif
+                const uint32_t *origP = &original[oddRow + bx];
+                uint32_t *litP = &lit[oddRow + bx];
+                for (int k = 0; k < 8; k++) {
+                  const uint16_t *eu = rowE[prev][bx + k];
+                  const uint16_t *ed = rowE[cur][bx + k];
+                  uint16_t e[3] = {(uint16_t)((eu[0] + ed[0]) >> 1),
+                                   (uint16_t)((eu[1] + ed[1]) >> 1),
+                                   (uint16_t)((eu[2] + ed[2]) >> 1)};
+                  litP[k] = shadeQ10Pixel(origP[k], e);
+                }
                 continue;
               }
-              uint16_t e[3];
-              if (kb == 4 && ctx->weaponValidGen == shadowFrameGen) {
-                e[0] = ctx->weaponEnergyQ10[0];
-                e[1] = ctx->weaponEnergyQ10[1];
-                e[2] = ctx->weaponEnergyQ10[2];
+            }
+          }
+          int prevValid = 0;
+          uint16_t prevE[3] = {0, 0, 0};
+          for (int k = 0; k < spanW; k++) {
+            int lx = bx + k;
+            int i = oddRow + lx;
+            const Surface *s = effSurf(surfBase, i, shift);
+            int kb = surfRawKind(s);
+            uint32_t ck = effColor(original, &surfBase[i], i, shift);
+            if (!kb) {
+              lit[i] = ck;
+              prevValid = 0;
+              continue;
+            }
+            uint16_t e[3];
+            if (kb == 4 && ctx->weaponValidGen == shadowFrameGen) {
+              e[0] = ctx->weaponEnergyQ10[0];
+              e[1] = ctx->weaponEnergyQ10[1];
+              e[2] = ctx->weaponEnergyQ10[2];
+            } else {
+              const Surface *sU = effSurf(surfBase, i - w, shift);
+              const Surface *sD = effSurf(surfBase, i + w, shift);
+              int maxDist = (kb == 1 || kb == 5) ? (72 * 4) : (48 * 4);
+              if (((rb >> lx) & 1ULL) &&
+                  compatibleSurfaceMax(sU, s, sD, maxDist)) {
+                const uint16_t *eu = rowE[prev][lx];
+                const uint16_t *ed = rowE[cur][lx];
+                e[0] = (uint16_t)((eu[0] + ed[0]) >> 1);
+                e[1] = (uint16_t)((eu[1] + ed[1]) >> 1);
+                e[2] = (uint16_t)((eu[2] + ed[2]) >> 1);
+              } else if (((rp >> lx) & 1ULL) && sameSurfNormal(sU, s)) {
+                e[0] = rowE[prev][lx][0];
+                e[1] = rowE[prev][lx][1];
+                e[2] = rowE[prev][lx][2];
+              } else if (((rc >> lx) & 1ULL) && sameSurfNormal(sD, s)) {
+                e[0] = rowE[cur][lx][0];
+                e[1] = rowE[cur][lx][1];
+                e[2] = rowE[cur][lx][2];
+              } else if (k != 0 && prevValid &&
+                         sameSurfNormal(effSurf(surfBase, i - 1, shift), s)) {
+                e[0] = prevE[0];
+                e[1] = prevE[1];
+                e[2] = prevE[2];
               } else {
-                const Surface *sU = effSurf(surfBase, i - w, shift);
-                const Surface *sD = effSurf(surfBase, i + w, shift);
-                int maxDist = (kb == 1 || kb == 5) ? (72 * 4) : (48 * 4);
-                if (((rb >> lx) & 1ULL) &&
-                    compatibleSurfaceMax(sU, s, sD, maxDist)) {
-                  const uint16_t *eu = rowE[prev][lx];
-                  const uint16_t *ed = rowE[cur][lx];
-                  e[0] = (uint16_t)((eu[0] + ed[0]) >> 1);
-                  e[1] = (uint16_t)((eu[1] + ed[1]) >> 1);
-                  e[2] = (uint16_t)((eu[2] + ed[2]) >> 1);
-                } else if (((rp >> lx) & 1ULL) && sameSurfNormal(sU, s)) {
-                  e[0] = rowE[prev][lx][0];
-                  e[1] = rowE[prev][lx][1];
-                  e[2] = rowE[prev][lx][2];
-                } else if (((rc >> lx) & 1ULL) && sameSurfNormal(sD, s)) {
-                  e[0] = rowE[cur][lx][0];
-                  e[1] = rowE[cur][lx][1];
-                  e[2] = rowE[cur][lx][2];
-                } else if (k != 0 && prevValid &&
-                           sameSurfNormal(effSurf(surfBase, i - 1, shift), s)) {
-                  e[0] = prevE[0];
-                  e[1] = prevE[1];
-                  e[2] = prevE[2];
-                } else {
-                  samplePointQ10(s, flicker, cc0 + lx, e, ctx);
-                }
+                samplePointQ10(s, flicker, cc0 + lx, e, ctx);
               }
-              lit[i] = shadeQ10Pixel(ck, e);
-              prevE[0] = e[0];
-              prevE[1] = e[1];
-              prevE[2] = e[2];
-              prevValid = 1;
             }
+            lit[i] = shadeQ10Pixel(ck, e);
+            prevE[0] = e[0];
+            prevE[1] = e[1];
+            prevE[2] = e[2];
+            prevValid = 1;
           }
-        }
-      }
-      if ((h & 1) == 0 && h >= 2) {
-        int lastCur = ((h - 2) >> 1) & 1;
-        uint64_t rp = rowReady[lastCur];
-        int oddRow = (h - 1) * w + cc0;
-        int prevValid = 0;
-        uint16_t prevE[3] = {0, 0, 0};
-        for (int lx = 0; lx < cw; lx++) {
-          int i = oddRow + lx;
-          const Surface *s = effSurf(surfBase, i, shift);
-          int kb = surfRawKind(s);
-          uint32_t ck = effColor(original, &surfBase[i], i, shift);
-          if (!kb) {
-            lit[i] = ck;
-            prevValid = 0;
-            continue;
-          }
-          uint16_t e[3];
-          if (kb == 4 && ctx->weaponValidGen == shadowFrameGen) {
-            e[0] = ctx->weaponEnergyQ10[0];
-            e[1] = ctx->weaponEnergyQ10[1];
-            e[2] = ctx->weaponEnergyQ10[2];
-          } else if (((rp >> lx) & 1ULL) &&
-                     sameSurfNormal(effSurf(surfBase, i - w, shift), s)) {
-            e[0] = rowE[lastCur][lx][0];
-            e[1] = rowE[lastCur][lx][1];
-            e[2] = rowE[lastCur][lx][2];
-          } else if ((lx & (xStep - 1)) != 0 && prevValid &&
-                     sameSurfNormal(effSurf(surfBase, i - 1, shift), s)) {
-            e[0] = prevE[0];
-            e[1] = prevE[1];
-            e[2] = prevE[2];
-          } else {
-            samplePointQ10(s, flicker, cc0 + lx, e, ctx);
-          }
-          lit[i] = shadeQ10Pixel(ck, e);
-          prevE[0] = e[0];
-          prevE[1] = e[1];
-          prevE[2] = e[2];
-          prevValid = 1;
         }
       }
     }
-    return;
-  }
-  for (int y = 0; y < h; y += 2) {
-    for (int x = cx0; x < cx1; x += xStep) {
-      int i0 = y * w + x, xEnd = x + xStep < w ? x + xStep : w;
-      if (!shift) {
-        lit[i0] = (lowResReady[i0] == readyTag)
-                      ? shadeQ10Pixel(original[i0], lowResEnergyQ10[i0])
-                      : original[i0];
-      }
-      if (x + xStep < w && lowResReady[i0] == readyTag &&
-          lowResReady[i0 + xStep] == readyTag) {
-        const Surface *s0 = &surfBase[i0], *sMid = &surfBase[i0 + (xStep >> 1)],
-                      *sEnd = &surfBase[i0 + xStep];
-        if (shift) {
-          if (surfKind(s0) == 4)
-            s0 = &underWeapon[i0];
-          if (surfKind(sMid) == 4)
-            sMid = &underWeapon[i0 + (xStep >> 1)];
-          if (surfKind(sEnd) == 4)
-            sEnd = &underWeapon[i0 + xStep];
-        }
-        if (compatibleSpan(s0, sMid, sEnd, xStep)) {
-          if (!shift) {
-            int e0 = lowResEnergyQ10[i0][0],
-                d0 = lowResEnergyQ10[i0 + xStep][0] - e0;
-            int e1 = lowResEnergyQ10[i0][1],
-                d1 = lowResEnergyQ10[i0 + xStep][1] - e1;
-            int e2 = lowResEnergyQ10[i0][2],
-                d2 = lowResEnergyQ10[i0 + xStep][2] - e2;
-            for (int k = 1; k < xStep; k++) {
-              uint16_t e[3] = {(uint16_t)(e0 + ((d0 * k) >> xShift)),
-                               (uint16_t)(e1 + ((d1 * k) >> xShift)),
-                               (uint16_t)(e2 + ((d2 * k) >> xShift))};
-              int idx = i0 + k;
-              lowResEnergyQ10[idx][0] = e[0];
-              lowResEnergyQ10[idx][1] = e[1];
-              lowResEnergyQ10[idx][2] = e[2];
-              lowResReady[idx] = readyTag;
-              lit[idx] = shadeQ10Pixel(original[idx], e);
-            }
-          } else {
-            for (int ch = 0; ch < 3; ch++) {
-              int e0 = lowResEnergyQ10[i0][ch],
-                  de = lowResEnergyQ10[i0 + xStep][ch] - e0;
-              for (int k = 1; k < xStep; k++)
-                lowResEnergyQ10[i0 + k][ch] =
-                    (uint16_t)(e0 + ((de * k) >> xShift));
-            }
-            for (int k = 1; k < xStep; k++)
-              lowResReady[i0 + k] = readyTag;
-          }
-          continue;
-        }
-      }
-      const Surface *s0 = (shift && surfKind(&surfBase[i0]) == 4)
-                              ? &underWeapon[i0]
-                              : &surfBase[i0];
-      const Surface *sEnd =
-          (x + xStep < w) ? ((shift && surfKind(&surfBase[i0 + xStep]) == 4)
-                                 ? &underWeapon[i0 + xStep]
-                                 : &surfBase[i0 + xStep])
-                          : NULL;
-      for (int xx = x + 1; xx < xEnd; xx++) {
-        int i = y * w + xx;
-        if (lowResReady[i] == readyTag) {
-          if (!shift)
-            lit[i] = shadeQ10Pixel(original[i], lowResEnergyQ10[i]);
-          continue;
-        }
-        const Surface *s = &surfBase[i];
-        if (shift && surfKind(s) == 4)
-          s = &underWeapon[i];
-        int sk = surfKind(s);
-        if (!sk) {
-          if (!shift)
-            lit[i] = original[i];
-          continue;
-        }
-        const Surface *sPrev = (shift && surfKind(&surfBase[i - 1]) == 4)
-                                   ? &underWeapon[i - 1]
-                                   : &surfBase[i - 1];
-        if (sk == 4 && ctx->weaponValidGen == shadowFrameGen) {
-          memcpy(lowResEnergyQ10[i], ctx->weaponEnergyQ10,
-                 sizeof(ctx->weaponEnergyQ10));
-        } else if (lowResReady[i - 1] == readyTag && sameSurfNormal(s, sPrev)) {
-          memcpy(lowResEnergyQ10[i], lowResEnergyQ10[i - 1],
-                 sizeof(lowResEnergyQ10[0]));
-        } else if (lowResReady[i0] == readyTag && sameSurfNormal(s, s0)) {
-          memcpy(lowResEnergyQ10[i], lowResEnergyQ10[i0],
-                 sizeof(lowResEnergyQ10[0]));
-        } else if (sEnd && lowResReady[i0 + xStep] == readyTag &&
-                   sameSurfNormal(s, sEnd)) {
-          memcpy(lowResEnergyQ10[i], lowResEnergyQ10[i0 + xStep],
-                 sizeof(lowResEnergyQ10[0]));
-        } else {
-          samplePointQ10(s, flicker, xx, lowResEnergyQ10[i], ctx);
-        }
-        lowResReady[i] = readyTag;
-        if (!shift)
-          lit[i] = shadeQ10Pixel(original[i], lowResEnergyQ10[i]);
-      }
-    }
-  }
-  if (!shift) {
-    /* Shade odd rows directly in registers so odd rows never touch
-     * lowResEnergyQ10/lowResReady or pay a second full-screen pass. */
-    for (int y = 1; y < h; y += 2) {
-      int row = y * w;
+    if ((h & 1) == 0 && h >= 2) {
+      int lastCur = ((h - 2) >> 1) & 1;
+      uint64_t rp = rowReady[lastCur];
+      int oddRow = (h - 1) * w + cc0;
       int prevValid = 0;
       uint16_t prevE[3] = {0, 0, 0};
-      for (int x = cx0; x < cx1; x++) {
-        int i = row + x;
-        const Surface *s = &surfBase[i];
+      for (int lx = 0; lx < cw; lx++) {
+        int i = oddRow + lx;
+        const Surface *s = effSurf(surfBase, i, shift);
         int kb = surfRawKind(s);
+        uint32_t ck = effColor(original, &surfBase[i], i, shift);
         if (!kb) {
-          lit[i] = original[i];
+          lit[i] = ck;
           prevValid = 0;
           continue;
         }
@@ -3507,128 +2997,39 @@ static void lightRunRange(LightWorkerCtx *ctx, const uint32_t *original,
           e[0] = ctx->weaponEnergyQ10[0];
           e[1] = ctx->weaponEnergyQ10[1];
           e[2] = ctx->weaponEnergyQ10[2];
-        } else if (y + 1 < h) {
-          const Surface *sU = &surfBase[i - w], *sD = &surfBase[i + w];
-          if (compatibleSurface(sU, s, sD) && lowResReady[i - w] == readyTag &&
-              lowResReady[i + w] == readyTag) {
-            const uint16_t *eu = lowResEnergyQ10[i - w];
-            const uint16_t *ed = lowResEnergyQ10[i + w];
-            e[0] = (uint16_t)((eu[0] + ed[0]) >> 1);
-            e[1] = (uint16_t)((eu[1] + ed[1]) >> 1);
-            e[2] = (uint16_t)((eu[2] + ed[2]) >> 1);
-          } else if (lowResReady[i - w] == readyTag && sameSurfNormal(sU, s)) {
-            memcpy(e, lowResEnergyQ10[i - w], sizeof(e));
-          } else if (lowResReady[i + w] == readyTag && sameSurfNormal(sD, s)) {
-            memcpy(e, lowResEnergyQ10[i + w], sizeof(e));
-          } else if ((x & (xStep - 1)) != 0 && prevValid &&
-                     sameSurfNormal(&surfBase[i - 1], s)) {
-            e[0] = prevE[0];
-            e[1] = prevE[1];
-            e[2] = prevE[2];
-          } else {
-            samplePointQ10(s, flicker, x, e, ctx);
-          }
+        } else if (((rp >> lx) & 1ULL) &&
+                   sameSurfNormal(effSurf(surfBase, i - w, shift), s)) {
+          e[0] = rowE[lastCur][lx][0];
+          e[1] = rowE[lastCur][lx][1];
+          e[2] = rowE[lastCur][lx][2];
+        } else if ((lx & (xStep - 1)) != 0 && prevValid &&
+                   sameSurfNormal(effSurf(surfBase, i - 1, shift), s)) {
+          e[0] = prevE[0];
+          e[1] = prevE[1];
+          e[2] = prevE[2];
         } else {
-          if (lowResReady[i - w] == readyTag &&
-              sameSurfNormal(&surfBase[i - w], s)) {
-            memcpy(e, lowResEnergyQ10[i - w], sizeof(e));
-          } else if ((x & (xStep - 1)) != 0 && prevValid &&
-                     sameSurfNormal(&surfBase[i - 1], s)) {
-            e[0] = prevE[0];
-            e[1] = prevE[1];
-            e[2] = prevE[2];
-          } else {
-            samplePointQ10(s, flicker, x, e, ctx);
-          }
+          samplePointQ10(s, flicker, cc0 + lx, e, ctx);
         }
-        lit[i] = shadeQ10Pixel(original[i], e);
+        lit[i] = shadeQ10Pixel(ck, e);
         prevE[0] = e[0];
         prevE[1] = e[1];
         prevE[2] = e[2];
         prevValid = 1;
       }
     }
-    return;
   }
-  for (int y = 1; y < h; y += 2) {
-    for (int x = cx0; x < cx1; x++) {
-      int i = y * w + x;
-      const Surface *s = &surfBase[i];
-      if (surfKind(s) == 4)
-        s = &underWeapon[i];
-      int sk = surfKind(s);
-      if (!sk)
-        continue;
-      if (y + 1 < h) {
-        const Surface *sU = &surfBase[i - w], *sD = &surfBase[i + w];
-        if (surfKind(sU) == 4)
-          sU = &underWeapon[i - w];
-        if (surfKind(sD) == 4)
-          sD = &underWeapon[i + w];
-        if (lowResReady[i - w] == readyTag && lowResReady[i + w] == readyTag &&
-            compatibleSurface(sU, s, sD)) {
-          for (int ch = 0; ch < 3; ch++)
-            lowResEnergyQ10[i][ch] = (uint16_t)((lowResEnergyQ10[i - w][ch] +
-                                                 lowResEnergyQ10[i + w][ch]) >>
-                                                1);
-          lowResReady[i] = readyTag;
-          continue;
-        }
-        if (lowResReady[i - w] == readyTag && sameSurfNormal(sU, s)) {
-          memcpy(lowResEnergyQ10[i], lowResEnergyQ10[i - w],
-                 sizeof(lowResEnergyQ10[0]));
-          lowResReady[i] = readyTag;
-          continue;
-        }
-        if (lowResReady[i + w] == readyTag && sameSurfNormal(sD, s)) {
-          memcpy(lowResEnergyQ10[i], lowResEnergyQ10[i + w],
-                 sizeof(lowResEnergyQ10[0]));
-          lowResReady[i] = readyTag;
-          continue;
-        }
-      } else if (lowResReady[i - w] == readyTag) {
-        const Surface *sU = (surfKind(&surfBase[i - w]) == 4)
-                                ? &underWeapon[i - w]
-                                : &surfBase[i - w];
-        if (sameSurfNormal(sU, s)) {
-          memcpy(lowResEnergyQ10[i], lowResEnergyQ10[i - w],
-                 sizeof(lowResEnergyQ10[0]));
-          lowResReady[i] = readyTag;
-          continue;
-        }
-      }
-      if (sk == 4 && ctx->weaponValidGen == shadowFrameGen) {
-        memcpy(lowResEnergyQ10[i], ctx->weaponEnergyQ10,
-               sizeof(ctx->weaponEnergyQ10));
-        lowResReady[i] = readyTag;
-        continue;
-      }
-      if ((x & (xStep - 1)) != 0 && lowResReady[i - 1] == readyTag) {
-        const Surface *sL = (surfKind(&surfBase[i - 1]) == 4)
-                                ? &underWeapon[i - 1]
-                                : &surfBase[i - 1];
-        if (sameSurfNormal(sL, s)) {
-          memcpy(lowResEnergyQ10[i], lowResEnergyQ10[i - 1],
-                 sizeof(lowResEnergyQ10[0]));
-          lowResReady[i] = readyTag;
-          continue;
-        }
-      }
-      samplePointQ10(s, flicker, x, lowResEnergyQ10[i], ctx);
-      lowResReady[i] = readyTag;
-    }
-  }
-  for (int y = 0; y < h; y++) {
-    int row = y * w;
-    for (int x = cx0; x < cx1; x++) {
-      int i = row + x;
-      uint32_t c =
-          (surfKind(&surfBase[i]) == 4) ? weaponBackground[i] : original[i];
-      lit[i] = (lowResReady[i] == readyTag)
-                   ? shadeQ10Pixel(c, lowResEnergyQ10[i])
-                   : c;
-    }
-  }
+}
+
+static void lightRunRange(LightWorkerCtx *ctx, const uint32_t *original,
+                          const float *flicker, int w, int h, int shift,
+                          int xStep, int xShift, unsigned char readyTag,
+                          int cx0, int cx1, int phase) {
+  if (shift)
+    lightRunRangeImpl(ctx, original, flicker, w, h, 1, xStep, xShift, readyTag,
+                      cx0, cx1, phase);
+  else
+    lightRunRangeImpl(ctx, original, flicker, w, h, 0, xStep, xShift, readyTag,
+                      cx0, cx1, phase);
 }
 #ifdef OE_LIGHT_MT
 typedef SceUID LightSema;
@@ -3714,37 +3115,6 @@ static int initLightWorkers(void) {
   return 1;
 }
 #endif
-#else
-static float lowResEnergy[400 * 240][3];
-static unsigned char lowResReady[400 * 240];
-static uint8_t lowResGen = 0;
-static int lowResGenW = 0, lowResGenH = 0;
-static int compatibleSurface(const Surface *a, const Surface *b,
-                             const Surface *c) {
-  if (b->kind != 1 && b->kind != 2 && b->kind != 3)
-    return 0;
-  if (a->kind != b->kind || c->kind != b->kind)
-    return 0;
-  if (a->nx != b->nx || a->ny != b->ny || a->nz != b->nz || c->nx != b->nx ||
-      c->ny != b->ny || c->nz != b->nz)
-    return 0;
-  float d = fabsf(a->x - c->x) + fabsf(a->y - c->y) + fabsf(a->z - c->z);
-  return d < 48.f;
-}
-static int compatibleSpan(const Surface *s0, const Surface *sMid,
-                          const Surface *sEnd, int step) {
-  if (s0->kind != 1 && s0->kind != 2)
-    return 0;
-  if (sMid->kind != s0->kind || sEnd->kind != s0->kind)
-    return 0;
-  if (sMid->nx != s0->nx || sMid->ny != s0->ny || sMid->nz != s0->nz ||
-      sEnd->nx != s0->nx || sEnd->ny != s0->ny || sEnd->nz != s0->nz)
-    return 0;
-  float d =
-      fabsf(s0->x - sEnd->x) + fabsf(s0->y - sEnd->y) + fabsf(s0->z - sEnd->z);
-  return d < (step > 4 ? 128.f : 64.f);
-}
-#endif
 #endif
 static const uint32_t *present(const uint32_t *original, int w, int h,
                                int lighting) {
@@ -3756,18 +3126,10 @@ static const uint32_t *present(const uint32_t *original, int w, int h,
   initLUT();
   float flicker[8];
   weaponEnergyValid = 0;
-#ifdef OE_NO_SPRITE_SHADOWS
   if (++shadowFrameGen == 0) {
     memset(lightWorkerCtx, 0, sizeof(lightWorkerCtx));
-    memset(shadowColumns, 0, (size_t)w * sizeof(shadowColumns[0]));
-    memset(cornerCache, 0, (size_t)w * sizeof(cornerCache[0]));
     shadowFrameGen = 1;
   }
-#else
-  roomDistCache.valid = 0;
-  memset(floorShadowCache, 0, sizeof(floorShadowCache));
-  memset(shadowColumns, 0, (size_t)w * sizeof(shadowColumns[0]));
-#endif
 #ifdef OE_QA_INTERACTIONS
   if (w > 176) {
     memset(verticalEnergy, 0, (size_t)w * sizeof(verticalEnergy[0]));
@@ -3783,12 +3145,48 @@ static const uint32_t *present(const uint32_t *original, int w, int h,
   double started = emscripten_get_now(), shadingStarted;
 #endif
   if (lighting) {
-#ifndef OE_NO_SPRITE_SHADOWS
-    memset(cornerCache, 0, (size_t)w * sizeof(cornerCache[0]));
-#endif
 #if defined(GAME_OE1)
-    if (g_app && g_app->canvas && g_app->canvas->mapId != 6008)
-      gayaHubActive = 0;
+    gayaHubActive = (g_app && g_app->canvas && g_app->canvas->mapId == 6008);
+#if !defined(OE_QA_INTERACTIONS)
+    if (gayaHubActive && !shift && w <= 400 && h <= 240 && prevHubValid &&
+        prevHubW == w && prevHubH == h && prevHubViewX == renderer->viewX &&
+        prevHubViewY == renderer->viewY && prevHubViewZ == renderer->viewZ &&
+        prevHubViewAngle == renderer->viewAngle &&
+        prevHubHalfH == renderer->halfH && prevHubFade == fadeLevel &&
+        coarseGenW == w && coarseGenH == h && coarseGen != 0) {
+      traceActive = 1;
+      unsigned char readyTag = coarseGen;
+      int xShift = (w > 176) ? 3 : 2;
+      for (int y = 0; y < h; y++) {
+        int row = y * w;
+        int cRow = (y >> 1) * COARSE_GRID_COLS;
+        for (int x = 0; x < w; x++) {
+          int i = row + x;
+          uint32_t c = original[i];
+          if (c == prevHubOriginal[i])
+            continue;
+          prevHubOriginal[i] = c;
+          const Surface *s = &surfaces[i];
+          if (!surfKind(s)) {
+            lit[i] = c;
+            continue;
+          }
+          int cidx = cRow + coarseCol(x, xShift, w);
+          if (coarseGrid[cidx].ready == readyTag) {
+            lit[i] = shadeQ10Pixel(c, coarseGrid[cidx].e);
+          } else {
+            uint16_t e[3];
+            samplePointQ10(s, NULL, x, e, &lightWorkerCtx[0]);
+            lit[i] = shadeQ10Pixel(c, e);
+          }
+        }
+      }
+      for (int j = 0; j < numLights; j++)
+        glow(&lights[j], 1.f);
+      traceActive = 0;
+      return lit;
+    }
+#endif
 #endif
     gather(renderer);
     for (int j = 0; j < numLights; j++) {
@@ -3808,6 +3206,13 @@ static const uint32_t *present(const uint32_t *original, int w, int h,
       } else {
         lightEffR2[j] = 0.f;
       }
+      if (lightGain[j] * 0.18f > 0.020f && lights[j].radius > 0.f) {
+        float rBack =
+            lights[j].radius * (1.f - sqrtf(0.020f / (lightGain[j] * 0.18f)));
+        lightBackfaceR2[j] = rBack > 0.f ? rBack * rBack : 0.f;
+      } else {
+        lightBackfaceR2[j] = 0.f;
+      }
     }
   }
 #ifdef OE_QA_INTERACTIONS
@@ -3821,16 +3226,14 @@ static const uint32_t *present(const uint32_t *original, int w, int h,
   traceActive = lighting;
 #ifndef OE_QA_INTERACTIONS
   if (lighting && w <= 400 && h <= 240) {
-    const Surface *surfBase = surfaces;
     int xStep = (w > 176) ? 8 : 4;
-#ifdef OE_NO_SPRITE_SHADOWS
-    if (++lowResGen == 0 || lowResGenW != w || lowResGenH != h) {
-      memset(lowResReady, 0, (size_t)w * (size_t)h);
-      lowResGen = 1;
-      lowResGenW = w;
-      lowResGenH = h;
+    if (++coarseGen == 0 || coarseGenW != w || coarseGenH != h) {
+      memset(coarseGrid, 0, sizeof(coarseGrid));
+      coarseGen = 1;
+      coarseGenW = w;
+      coarseGenH = h;
     }
-    unsigned char readyTag = lowResGen;
+    unsigned char readyTag = coarseGen;
     int xShift = (w > 176) ? 3 : 2;
 #ifdef OE_LIGHT_MT
     if (w > 176 && initLightWorkers()) {
@@ -3856,202 +3259,6 @@ static const uint32_t *present(const uint32_t *original, int w, int h,
       lightRunRange(&lightWorkerCtx[0], original, flicker, w, h, shift, xStep,
                     xShift, readyTag, 0, w, 1);
     }
-#else
-    memset(lowResReady, 0, (size_t)w * (size_t)h);
-    for (int y = 0; y < h; y += 2) {
-      for (int x = 0; x < w; x += xStep) {
-        int i = y * w + x;
-        const Surface *s = &surfBase[i];
-        if (shift && s->kind == 4)
-          s = &underWeapon[i];
-        if (!s->kind)
-          continue;
-        if (s->kind == 4 && weaponEnergyValid)
-          memcpy(lowResEnergy[i], weaponEnergy, sizeof(weaponEnergy));
-        else {
-          incidentEnergy(s, flicker, x, lowResEnergy[i]);
-          if (s->kind == 4) {
-            memcpy(weaponEnergy, lowResEnergy[i], sizeof(weaponEnergy));
-            weaponEnergyValid = 1;
-          }
-        }
-        lowResReady[i] = 1;
-      }
-      if (w > 0 && ((w - 1) & (xStep - 1)) != 0) {
-        int x = w - 1, i = y * w + x;
-        const Surface *s = &surfBase[i];
-        if (shift && s->kind == 4)
-          s = &underWeapon[i];
-        if (s->kind) {
-          if (s->kind == 4 && weaponEnergyValid)
-            memcpy(lowResEnergy[i], weaponEnergy, sizeof(weaponEnergy));
-          else {
-            incidentEnergy(s, flicker, x, lowResEnergy[i]);
-            if (s->kind == 4) {
-              memcpy(weaponEnergy, lowResEnergy[i], sizeof(weaponEnergy));
-              weaponEnergyValid = 1;
-            }
-          }
-          lowResReady[i] = 1;
-        }
-      }
-      for (int x = 0; x < w; x += xStep) {
-        int i0 = y * w + x, xEnd = x + xStep < w ? x + xStep : w;
-        if (x + xStep < w && lowResReady[i0] && lowResReady[i0 + xStep]) {
-          const Surface *s0 = &surfBase[i0],
-                        *sMid = &surfBase[i0 + (xStep >> 1)],
-                        *sEnd = &surfBase[i0 + xStep];
-          if (shift) {
-            if (s0->kind == 4)
-              s0 = &underWeapon[i0];
-            if (sMid->kind == 4)
-              sMid = &underWeapon[i0 + (xStep >> 1)];
-            if (sEnd->kind == 4)
-              sEnd = &underWeapon[i0 + xStep];
-          }
-          if (compatibleSpan(s0, sMid, sEnd, xStep)) {
-            float invStep = 1.f / (float)xStep;
-            for (int ch = 0; ch < 3; ch++) {
-              float e0 = lowResEnergy[i0][ch],
-                    de = (lowResEnergy[i0 + xStep][ch] - e0) * invStep;
-              for (int k = 1; k < xStep; k++)
-                lowResEnergy[i0 + k][ch] = e0 + de * k;
-            }
-            for (int k = 1; k < xStep; k++)
-              lowResReady[i0 + k] = 1;
-            continue;
-          }
-        }
-        for (int xx = x + 1; xx < xEnd; xx++) {
-          int i = y * w + xx;
-          if (lowResReady[i])
-            continue;
-          const Surface *s = &surfBase[i];
-          if (shift && s->kind == 4)
-            s = &underWeapon[i];
-          if (!s->kind)
-            continue;
-          if (s->kind == 4 && weaponEnergyValid)
-            memcpy(lowResEnergy[i], weaponEnergy, sizeof(weaponEnergy));
-          else if (lowResReady[i0] && s->kind == surfBase[i0].kind &&
-                   s->nx == surfBase[i0].nx && s->ny == surfBase[i0].ny &&
-                   s->nz == surfBase[i0].nz) {
-            memcpy(lowResEnergy[i], lowResEnergy[i0], sizeof(lowResEnergy[0]));
-          } else if (x + xStep < w && lowResReady[i0 + xStep] &&
-                     s->kind == surfBase[i0 + xStep].kind &&
-                     s->nx == surfBase[i0 + xStep].nx &&
-                     s->ny == surfBase[i0 + xStep].ny &&
-                     s->nz == surfBase[i0 + xStep].nz) {
-            memcpy(lowResEnergy[i], lowResEnergy[i0 + xStep],
-                   sizeof(lowResEnergy[0]));
-          } else {
-            incidentEnergy(s, flicker, xx, lowResEnergy[i]);
-            if (s->kind == 4) {
-              memcpy(weaponEnergy, lowResEnergy[i], sizeof(weaponEnergy));
-              weaponEnergyValid = 1;
-            }
-          }
-          lowResReady[i] = 1;
-        }
-      }
-    }
-    for (int y = 1; y < h; y += 2) {
-      for (int x = 0; x < w; x++) {
-        int i = y * w + x;
-        const Surface *s = &surfBase[i];
-        if (shift && s->kind == 4)
-          s = &underWeapon[i];
-        if (!s->kind)
-          continue;
-        if (y + 1 < h) {
-          const Surface *sU = &surfBase[i - w], *sD = &surfBase[i + w];
-          if (shift && sU->kind == 4)
-            sU = &underWeapon[i - w];
-          if (shift && sD->kind == 4)
-            sD = &underWeapon[i + w];
-          if (lowResReady[i - w] && lowResReady[i + w] &&
-              compatibleSurface(sU, s, sD)) {
-            for (int ch = 0; ch < 3; ch++)
-              lowResEnergy[i][ch] =
-                  .5f * (lowResEnergy[i - w][ch] + lowResEnergy[i + w][ch]);
-            lowResReady[i] = 1;
-            continue;
-          }
-          if (lowResReady[i - w] && sU->kind == s->kind && sU->nx == s->nx &&
-              sU->ny == s->ny && sU->nz == s->nz) {
-            memcpy(lowResEnergy[i], lowResEnergy[i - w],
-                   sizeof(lowResEnergy[0]));
-            lowResReady[i] = 1;
-            continue;
-          }
-          if (lowResReady[i + w] && sD->kind == s->kind && sD->nx == s->nx &&
-              sD->ny == s->ny && sD->nz == s->nz) {
-            memcpy(lowResEnergy[i], lowResEnergy[i + w],
-                   sizeof(lowResEnergy[0]));
-            lowResReady[i] = 1;
-            continue;
-          }
-        } else if (lowResReady[i - w] && surfBase[i - w].kind == s->kind) {
-          memcpy(lowResEnergy[i], lowResEnergy[i - w], sizeof(lowResEnergy[0]));
-          lowResReady[i] = 1;
-          continue;
-        }
-        if (x > 0 && x + 1 < w) {
-          const Surface *sL = &surfBase[i - 1], *sR = &surfBase[i + 1];
-          if (shift && sL->kind == 4)
-            sL = &underWeapon[i - 1];
-          if (shift && sR->kind == 4)
-            sR = &underWeapon[i + 1];
-          if (lowResReady[i - 1] && compatibleSurface(sL, s, sR)) {
-            if (!lowResReady[i + 1]) {
-              if (sR->kind == 4 && weaponEnergyValid)
-                memcpy(lowResEnergy[i + 1], weaponEnergy, sizeof(weaponEnergy));
-              else {
-                incidentEnergy(sR, flicker, x + 1, lowResEnergy[i + 1]);
-                if (sR->kind == 4) {
-                  memcpy(weaponEnergy, lowResEnergy[i + 1],
-                         sizeof(weaponEnergy));
-                  weaponEnergyValid = 1;
-                }
-              }
-              lowResReady[i + 1] = 1;
-            }
-            for (int ch = 0; ch < 3; ch++)
-              lowResEnergy[i][ch] =
-                  .5f * (lowResEnergy[i - 1][ch] + lowResEnergy[i + 1][ch]);
-            lowResReady[i] = 1;
-            continue;
-          }
-          if (lowResReady[i - 1] && sL->kind == s->kind && sL->nx == s->nx &&
-              sL->ny == s->ny && sL->nz == s->nz) {
-            memcpy(lowResEnergy[i], lowResEnergy[i - 1],
-                   sizeof(lowResEnergy[0]));
-            lowResReady[i] = 1;
-            continue;
-          }
-        }
-        if (s->kind == 4 && weaponEnergyValid)
-          memcpy(lowResEnergy[i], weaponEnergy, sizeof(weaponEnergy));
-        else {
-          incidentEnergy(s, flicker, x, lowResEnergy[i]);
-          if (s->kind == 4) {
-            memcpy(weaponEnergy, lowResEnergy[i], sizeof(weaponEnergy));
-            weaponEnergyValid = 1;
-          }
-        }
-        lowResReady[i] = 1;
-      }
-    }
-    for (int i = 0; i < w * h; i++) {
-      const Surface *s = &surfBase[i];
-      uint32_t c = original[i];
-      if (shift && s->kind == 4) {
-        s = &underWeapon[i];
-        c = weaponBackground[i];
-      }
-      lit[i] = s->kind ? shadePixelWithEnergy(s, c, lowResEnergy[i]) : c;
-    }
-#endif
   } else
 #endif
   {
@@ -4072,6 +3279,22 @@ static const uint32_t *present(const uint32_t *original, int w, int h,
 #ifdef OE_QA_INTERACTIONS
   profile[1] = emscripten_get_now() - shadingStarted;
   double haloStarted = emscripten_get_now();
+#endif
+#if defined(GAME_OE1) && !defined(OE_QA_INTERACTIONS)
+  if (lighting && gayaHubActive && !shift && w <= 400 && h <= 240) {
+    memcpy(prevHubOriginal, original, (size_t)w * (size_t)h * sizeof(uint32_t));
+    prevHubValid = 1;
+    prevHubW = w;
+    prevHubH = h;
+    prevHubViewX = renderer->viewX;
+    prevHubViewY = renderer->viewY;
+    prevHubViewZ = renderer->viewZ;
+    prevHubViewAngle = renderer->viewAngle;
+    prevHubHalfH = renderer->halfH;
+    prevHubFade = fadeLevel;
+  } else {
+    prevHubValid = 0;
+  }
 #endif
   if (lighting)
     for (int j = 0; j < numLights; j++)

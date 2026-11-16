@@ -383,10 +383,13 @@ void Render_drawFlatRow(Render *render, int x, int y, void *tex, int width,
     int x = render->clipX0;
     int width = render->clipX1 - x;
     int yEnd = render->clipY1 - y;
+    int horizon = render->halfH < yEnd ? render->halfH : yEnd;
     uint16_t **ceil = &render->flatTile[0x400];
     uint16_t **floor = &render->flatTile[0];
 
-    for (; y < render->halfH; y++)
+    if (horizon < y)
+      horizon = y;
+    for (; y < horizon; y++)
       Render_drawFlatRow(render, x, y, ceil, width, render->ceilFlat == 0);
     for (; y < yEnd; y++)
       Render_drawFlatRow(render, x, y, floor, width, render->floorFlat == 0);

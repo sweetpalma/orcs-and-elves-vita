@@ -294,17 +294,26 @@ int Render_rasterizeWall(Render *render, void *segp) {
   span = Render_setPalette(render, render->wallMap[seg->texture].palette,
                            render->blendMode);
 
+  int prevPreA = 0, prevDepth = 0, prevScale = 0;
   for (; x < xEnd; x++) {
-    int depth = (0x40000000 / a) << 2;
-    int scale = rdiv64(0x1d4000000LL, a); /* texels per screen pixel, 16.16 */
-    int column = rsmulhi(scale, u) % 0x75;
+    int preA = a, curU = u;
+    int depth, scale, column;
     int du, top, bottom, screenY;
     int64_t tex;
 
     a += dAdX;
     u += dUdX;
+    depth = (preA == prevPreA) ? prevDepth : ((0x40000000 / preA) << 2);
     if (render->columnZ[x] < depth)
       continue;
+    if (preA != prevPreA) {
+      prevPreA = preA;
+      prevDepth = depth;
+      prevScale =
+          rdiv64(0x1d4000000LL, preA); /* texels per screen pixel, 16.16 */
+    }
+    scale = prevScale;
+    column = rsmulhi(scale, curU) % 0x75;
     if (!(seg->flags & LINE_NO_DEPTH))
       render->columnZ[x] = depth;
 
@@ -404,16 +413,24 @@ int Render_rasterizeWall2(Render *render, void *segp) {
   texBase = (int32_t)((uint32_t)(uint16_t)shape[ofs] |
                       ((uint32_t)(uint16_t)shape[ofs + 1] << 16));
 
+  int prevPreA = 0, prevDepth = 0, prevScale = 0;
   for (; x < xEnd; x++) {
-    int depth = (0x40000000 / a) << 2;
-    int scale = rdiv64(rlsl64(render->spriteScale, 16), a);
-    int column = rsmulhi(scale, u);
+    int preA = a, curU = u;
+    int depth, scale, column;
     int du, run, viewZ, eyeOfs, floorY, ceilY;
 
     a += dAdX;
     u += dUdX;
+    depth = (preA == prevPreA) ? prevDepth : ((0x40000000 / preA) << 2);
     if (render->columnZ[x] < depth && !(render->segFlags & 2))
       continue;
+    if (preA != prevPreA) {
+      prevPreA = preA;
+      prevDepth = depth;
+      prevScale = rdiv64(rlsl64(render->spriteScale, 16), preA);
+    }
+    scale = prevScale;
+    column = rsmulhi(scale, curU);
 
     du = scale >> 3;
     run = shape[ofs + 4 + column] + ofs + 2;

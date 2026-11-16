@@ -50,10 +50,11 @@ static void gpuMarkCell(int x,int y,int z){
   /* An unused corner outside every possible receiver's source influence
    * needs no ray. The 32-unit guard includes interpolation and normal bias. */
   if(dx*dx+dy*dy+dz*dz>reach*reach)continue;
-  visibilityAt(x,y,z,j,1);
+  float vis=visibilityAt(x,y,z,j,1);
+  uint32_t state=(vis>.5f)?2u:1u;
   unsigned shift=j*2,mask=3u<<shift;
-  value=(value&~mask)|((uint32_t)visibility[cell]&mask);
-  value=(value&~(mask<<16))|(((uint32_t)wallVisibility[cell]&mask)<<16);
+  value=(value&~mask)|(state<<shift);
+  value=(value&~(mask<<16))|(state<<(shift+16));
  }
  if(gpuShadows[cell]!=value){gpuShadows[cell]=value;gpuShadowRevision++;}
 }
@@ -145,7 +146,7 @@ const uint32_t *BrewLight_gpu(const uint32_t *original,int w,int h){
 #ifdef OE_QA_INTERACTIONS
  double started=emscripten_get_now();
 #endif
- int shift=staffShift();memset(cornerCache,0,sizeof(cornerCache));memset(gpuVisited,0,sizeof(gpuVisited));
+ int shift=staffShift();memset(gpuVisited,0,sizeof(gpuVisited));
  memset(gpuWallSpans,0,sizeof(gpuWallSpans));memset(gpuFloorSpans,0,sizeof(gpuFloorSpans));
  memset(gpuContactColumns,0,sizeof(gpuContactColumns));memset(gpuContactRows,0,sizeof(gpuContactRows));
  memset(gpuNearColumns,0,sizeof(gpuNearColumns));
