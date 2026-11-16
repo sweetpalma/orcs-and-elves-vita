@@ -412,6 +412,12 @@ void Camera_apply(Camera *cam)
 {
 	Applet *app = g_app;
 	app->render->noViewOffset = 1;
+	if (app->canvas) {
+		app->canvas->viewX = cam->x;
+		app->canvas->viewY = cam->y;
+		app->canvas->viewZ = cam->z;
+		app->canvas->viewAngle = cam->angle;
+	}
 	Render_render(app->render, cam->x, cam->y, cam->z, cam->angle);
 	app->render->noViewOffset = 0;
 }

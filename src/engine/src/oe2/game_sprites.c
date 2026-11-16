@@ -171,6 +171,12 @@ int Camera_spline(Camera *cam, int t, int p0, int p1, int p2, int p3) {
 
 /* 0x00002ee8 */
 int Camera_apply(Camera *cam) {
+  if (g_app && g_app->canvas) {
+    g_app->canvas->viewX = cam->x;
+    g_app->canvas->viewY = cam->y;
+    g_app->canvas->viewZ = cam->z;
+    g_app->canvas->viewAngle = cam->angle;
+  }
   Render_render(g_app->render, cam->x, cam->y, cam->z, cam->angle);
   int result = Canvas_updateFade(g_app->canvas);
   OE_captureRenderedWorld(g_app->render);
