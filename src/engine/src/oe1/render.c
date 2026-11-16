@@ -824,7 +824,7 @@ void Render_render(Render *render, int viewX, int viewY, int viewZ, int angle) {
   int elapsed, shakeX, shakeY;
 
   Render_syncScreenDib(render);
-  render->frameTime = (int32_t)GETTIMEMS();
+  render->frameTime = (int32_t)GETUPTIMEMS();
   render->profStart = (int32_t)GETUPTIMEMS();
 
   /* the eye sits 16 units behind the player's position */
