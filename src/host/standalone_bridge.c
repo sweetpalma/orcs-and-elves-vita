@@ -296,11 +296,7 @@ int OE_toggleFastTick(void) { return 0; }
 
 int OE_getTickMs(void) {
   ensure_host_config();
-#if defined(GAME_OE1)
   return 15;
-#else
-  return 40;
-#endif
 }
 
 void OE_setSkipPresent(int skip) {

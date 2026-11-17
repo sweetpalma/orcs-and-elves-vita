@@ -46,11 +46,9 @@ The gameplay foundation is reconstructed directly from the disassembled binary o
 
 ### 2.1. The Simulation Step & Timing
 
-- **Orcs & Elves II (`oe2`):** Operates on a fixed **40 ms step** (`25 Hz` simulation tick).
-- **Orcs & Elves (`oe1`):** Operates on a fixed **15 ms step** (~`66.7 Hz` simulation tick).
-- `app.c`: `Applet_HandleEvent` and `Canvas_step` drive world updates.
-- In `standalone_bridge.c`, `OE_getTickMs()` supplies the authentic fixed simulation step for each game.
-- Simulation timing is strictly decoupled from presentation: turn animations, combat dice rolls, projectile trajectories, and tile triggers run synchronously per tick.
+- **Orcs & Elves (`oe1`) & Orcs & Elves II (`oe2`):** Both run on a unified **15 ms step** (~`66.7 Hz` tick) via `OE_getTickMs()` in `standalone_bridge.c` (`orcsandelves2.mod` originally passed `40 ms` to `ISHELL_SetTimer`, while all world/projectile/particle timers in OE2 use real millisecond `GETUPTIMEMS()` deltas and `Canvas_setAnimFrames` scales step interpolation with `eff = (n * 8 + 1) / 3` frames so the default `n=6` takes 16 ticks × 15 ms = authentic 240 ms per tile move and quarter turn).
+- `app.c`: `Applet_HandleEvent` and `Applet_Tick` / `App_tick` drive world updates.
+- When multiple 15 ms steps fall into a single display VSync interval on PS Vita (`main_vita.c`), `OE_setSkipPresent(1)` advances intermediate simulation ticks without running redundant 3D software rasterization or lighting passes.
 
 ### 2.2. Coordinate Systems & Units
 

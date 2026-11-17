@@ -13,13 +13,8 @@
 #include "standalone_bridge.h"
 #endif
 
-#if defined(GAME_OE1)
 #define TICK_MS 15
 #define FAST_TICK_MS 5
-#else
-#define TICK_MS 40
-#define FAST_TICK_MS 16
-#endif
 
 /* Held keys repeat the way the BREW shell repeated them, not at the desktop's
  * rate: the applet sees one EVT_KEY on press, then (if still held) one every

@@ -951,6 +951,9 @@ void Render_render(Render *render, int viewX, int viewY, int viewZ, int angle) {
       render->ceilZ = 0x80;
   }
 
+  if (OE_shouldSkipPresent())
+    return;
+
   BrewLight_begin(render);
   RenderHw_beginFrame(
       render); /* port: the frame for the GPU as well (render_hw.c) */

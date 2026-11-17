@@ -8,7 +8,6 @@ A modern port of the classic id Software dungeon crawlers Orcs & Elves and Orcs 
 
 - **Remastered lighting:** Adds real-time point lighting, geometric ray shadows, contact ambient occlusion, and projectile impact flashes while keeping all original BREW textures and sprites, switchable in Options with Classic mode.
 - **Widescreen support:** Renders at `352×200` widescreen (instead of the original `176×220` phone layout) scaled to the PS Vita's `960×544` native resolution.
-- **Faithful simulation:** Preserves the original BREW gameplay timing and RNG.
 - **Fully tested:** Completely playable and tested from start to finish on real PlayStation Vita hardware.
 
 ## Installation

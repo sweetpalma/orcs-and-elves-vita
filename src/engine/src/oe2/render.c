@@ -973,6 +973,8 @@ void Render_render(Render *render, int viewX, int viewY, int viewZ, int angle) {
 #ifdef OE_CINEMATIC_CAPTURE
   Film_adjustView(render);
 #endif
+  if (OE_shouldSkipPresent())
+    return;
   BrewView_begin(render);
   BrewLight_begin(render);
   Render_clearColumnDepth(render);

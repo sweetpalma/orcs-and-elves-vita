@@ -28,7 +28,7 @@
 #define GAME_PRIMARY_DIR "ux0:data/oe2"
 #endif
 
-#define TICK_MS 40
+#define TICK_MS 15
 #define KEY_REPEAT_START 320
 #define KEY_REPEAT_RATE 80
 #define KB_AUTOREPEAT 0x40
@@ -162,12 +162,18 @@ int main(int argc, char **argv) {
     uint32_t now = Plat_uptimeMs();
     if ((int32_t)(now - nextTick) >= 0) {
       uint32_t step = (uint32_t)OE_getTickMs();
-      Applet_Tick(app);
-      if (Brew_quitRequested())
-        break;
-      nextTick = now + step;
+      int budget = 4;
+      while ((int32_t)(now - nextTick) >= 0 && budget-- > 0) {
+        nextTick += step;
+        int moreDue = ((int32_t)(now - nextTick) >= 0 && budget > 0);
+        OE_setSkipPresent(moreDue);
+        Applet_Tick(app);
+        if (Brew_quitRequested())
+          break;
+      }
+      OE_setSkipPresent(0);
       uint32_t after = Plat_uptimeMs();
-      if ((int32_t)(after - nextTick) > 0)
+      if ((int32_t)(after - nextTick) > (int32_t)(step * 4u))
         nextTick = after;
     } else {
       Plat_delay(1);

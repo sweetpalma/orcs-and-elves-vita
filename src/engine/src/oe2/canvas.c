@@ -335,19 +335,22 @@ void Canvas_shutdown(Canvas *canvas) {
 
 /* 0x00024a80 Buffer a key press until the next tick (at most 4). */
 void Canvas_queueKey(Canvas *canvas, short key, int isRepeat) {
-  int isMoving = (canvas->state == ST_PLAYING || canvas->state == ST_AUTOMAP) &&
-                 (canvas->viewX != canvas->destX || canvas->viewY != canvas->destY ||
-                  canvas->viewAngle != canvas->destAngle || canvas->moveCount != 0);
+  int isMoving =
+      (canvas->state == ST_PLAYING || canvas->state == ST_AUTOMAP) &&
+      (canvas->viewX != canvas->destX || canvas->viewY != canvas->destY ||
+       canvas->viewAngle != canvas->destAngle || canvas->moveCount != 0);
 
   if (isMoving) {
     if (isRepeat) {
-      /* While moving, keep at most one pending repeat; do not flood the queue */
+      /* While moving, keep at most one pending repeat; do not flood the queue
+       */
       canvas->keyQueue[0] = key;
       canvas->keyIsRepeat[0] = 1;
       canvas->numKeys = 1;
       return;
     } else {
-      /* New physical button press while moving: buffer this single latest intended move */
+      /* New physical button press while moving: buffer this single latest
+       * intended move */
       canvas->keyQueue[0] = key;
       canvas->keyIsRepeat[0] = 0;
       canvas->numKeys = 1;
@@ -362,8 +365,10 @@ void Canvas_queueKey(Canvas *canvas, short key, int isRepeat) {
 }
 
 void Canvas_keyReleased(Canvas *canvas, short key) {
-  /* When releasing a held key, cancel any pending autorepeats so the character stops immediately */
-  if (canvas->numKeys > 0 && canvas->keyQueue[0] == key && canvas->keyIsRepeat[0]) {
+  /* When releasing a held key, cancel any pending autorepeats so the character
+   * stops immediately */
+  if (canvas->numKeys > 0 && canvas->keyQueue[0] == key &&
+      canvas->keyIsRepeat[0]) {
     canvas->numKeys = 0;
   }
 }
@@ -596,9 +601,10 @@ void Canvas_saveState(Canvas *canvas, int saveType, int strTable, int strId) {
 
 /* 0x00039c34 Frames per tile step / quarter turn. */
 void Canvas_setAnimFrames(Canvas *canvas, int n) {
+  int eff = (n * 8 + 1) / 3;
   canvas->animFrames = n;
-  canvas->moveStep = (n + 63) / n;
-  canvas->turnStep = (n + 255) / n;
+  canvas->moveStep = (eff + 63) / eff;
+  canvas->turnStep = (eff + 384) / eff;
 }
 
 /* 0x0003d784 Start a fade (state 0x12) of `duration` ms. */
@@ -926,7 +932,7 @@ int Canvas_updatePlaying(Canvas *canvas) {
                       canvas->viewRect[3]);
     Hud_draw(canvas->hud);
     Hud_drawControlsHelp(canvas->hud);
-  } else if (!Game_isCinematicActive(app->game)) {
+  } else if (!Game_isCinematicActive(app->game) && !OE_shouldSkipPresent()) {
     Hud_draw(canvas->hud);
   }
 
@@ -1059,6 +1065,10 @@ void Canvas_renderView(Canvas *canvas, int x, int y, int angle) {
   canvas->benchTimes[0] = App_getUpTimeMS();
   Render_render(app->render, x, y, canvas->viewZ, angle);
   canvas->benchTimes[1] = App_getUpTimeMS();
+  if (OE_shouldSkipPresent()) {
+    Canvas_updateFade(canvas);
+    return;
+  }
   Combat_drawWeapon(app->combat);
   Canvas_updateFade(canvas);
 
@@ -1292,7 +1302,8 @@ void Canvas_run(Canvas *canvas) {
 
   case ST_FADE: {
     /* camera height eases back while the fade runs */
-    int zStep = (canvas->animFrames + 11) / canvas->animFrames;
+    int eff = (canvas->animFrames * 8 + 1) / 3;
+    int zStep = (eff + 11) / eff;
     if (canvas->viewZ < canvas->destZ) {
       canvas->viewZ += zStep;
       if (canvas->viewZ > canvas->destZ)

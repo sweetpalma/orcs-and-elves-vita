@@ -32,6 +32,7 @@ void OE_projectileImpact(const GameSprite *missile, int flaming);
 void OE_captureWorld(const int16_t *rect);
 void OE_captureRenderedWorld(Render *render);
 void OE_invalidateLighting(void);
+int OE_shouldSkipPresent(void);
 void BrewLight_begin(Render *r);
 void BrewView_begin(Render *r);
 void BrewView_line(Render *r, const Line *line);

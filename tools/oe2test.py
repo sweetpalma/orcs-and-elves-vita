@@ -105,6 +105,7 @@ class GameSession:
         env = os.environ.copy()
         env["OE_PIPE"] = "1"
         env["SDL_VIDEODRIVER"] = "dummy"
+        env["SDL_AUDIODRIVER"] = "dummy"
 
         cmd = [str(self.bin_path), "--screen", screen]
         if fast:

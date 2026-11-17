@@ -407,7 +407,10 @@ void Canvas_updateMovement(Canvas *cv, int unused1, int unused2) {
 
   moveStep = cv->moveStep;
   turnStep = cv->turnStep;
-  zStep = (cv->animFrames + 11) / cv->animFrames;
+  {
+    int eff = (cv->animFrames * 8 + 1) / 3;
+    zStep = (eff + 11) / eff;
+  }
   if (app->player->statusEffects[SE_HASTE].turns > 0) {
     moveStep += moveStep / 2;
     turnStep += moveStep / 2;
