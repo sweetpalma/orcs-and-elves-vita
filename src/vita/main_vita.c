@@ -78,17 +78,15 @@ int main(int argc, char **argv) {
 
   if (!data) {
 #if defined(GAME_OE1)
-    Plat_showError(
-        GAME_TITLE,
-        "Could not find game data!\n\n"
-        "Please copy " GAME_BAR_FILE " and " GAME_MOD_FILE "\n"
-        "to " GAME_PRIMARY_DIR "/ (or " GAME_FALLBACK_DIR "/)");
+    Plat_showError(GAME_TITLE,
+                   "Could not find game data!\n\n"
+                   "Please copy " GAME_BAR_FILE " and " GAME_MOD_FILE "\n"
+                   "to " GAME_PRIMARY_DIR "/ (or " GAME_FALLBACK_DIR "/)");
 #else
-    Plat_showError(
-        GAME_TITLE,
-        "Could not find game data!\n\n"
-        "Please copy " GAME_BAR_FILE " and\n"
-        GAME_MOD_FILE " to " GAME_PRIMARY_DIR "/");
+    Plat_showError(GAME_TITLE,
+                   "Could not find game data!\n\n"
+                   "Please copy " GAME_BAR_FILE " and\n" GAME_MOD_FILE
+                   " to " GAME_PRIMARY_DIR "/");
 #endif
     return 1;
   }
@@ -97,8 +95,8 @@ int main(int argc, char **argv) {
     char msg[256];
     snprintf(msg, sizeof(msg),
              "Failed to load game data from:\n%s\n\n"
-             "Please check that " GAME_BAR_FILE " and\n"
-             GAME_MOD_FILE " are valid BREW 7.0.41 files.",
+             "Please check that " GAME_BAR_FILE " and\n" GAME_MOD_FILE
+             " are valid BREW 7.0.41 files.",
              data);
     Plat_showError(GAME_TITLE, msg);
     return 1;
@@ -114,7 +112,8 @@ int main(int argc, char **argv) {
 
   app = App_create(w, h);
   if (!app) {
-    Plat_showError(GAME_TITLE, "Engine startup failed.\nOut of memory or corrupted data.");
+    Plat_showError(GAME_TITLE,
+                   "Engine startup failed.\nOut of memory or corrupted data.");
     Plat_shutdown();
     Brew_shutdown();
 #ifdef __vita__
@@ -162,12 +161,18 @@ int main(int argc, char **argv) {
     uint32_t now = Plat_uptimeMs();
     if ((int32_t)(now - nextTick) >= 0) {
       uint32_t step = (uint32_t)OE_getTickMs();
-      Applet_Tick(app);
-      if (Brew_quitRequested())
-        break;
-      nextTick = now + step;
+      int budget = 4;
+      while ((int32_t)(now - nextTick) >= 0 && budget-- > 0) {
+        nextTick += step;
+        int moreDue = ((int32_t)(now - nextTick) >= 0 && budget > 0);
+        OE_setSkipPresent(moreDue);
+        Applet_Tick(app);
+        if (Brew_quitRequested())
+          break;
+      }
+      OE_setSkipPresent(0);
       uint32_t after = Plat_uptimeMs();
-      if ((int32_t)(after - nextTick) > 0)
+      if ((int32_t)(after - nextTick) > (int32_t)(step * 4u))
         nextTick = after;
     } else {
       Plat_delay(1);

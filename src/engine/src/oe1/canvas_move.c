@@ -287,7 +287,8 @@ void Canvas_renderView(Canvas *canvas, int x, int y, int angle)
 	canvas->lastRenderTime = canvas->app->tickTime;
 	canvas->renderStart = (int32_t)GETUPTIMEMS();
 	Render_render(canvas->render, x, y, canvas->viewZ, angle);
-	Combat_drawWeapon(canvas->combat, canvas->shakeX, canvas->shakeY);
+	if (!OE_shouldSkipPresent())
+		Combat_drawWeapon(canvas->combat, canvas->shakeX, canvas->shakeY);
 	canvas->renderEnd = (int32_t)GETUPTIMEMS();
 }
 
@@ -383,7 +384,7 @@ void Canvas_updatePlaying(Canvas *canvas)
 		displayFillBlack(0, 0, canvas->viewW, canvas->viewH);
 		Hud_draw(canvas->hud);
 		Hud_drawControlsHelp(canvas->hud);
-	} else if (!Game_isCinematicActive(canvas->game)) {
+	} else if (!Game_isCinematicActive(canvas->game) && !OE_shouldSkipPresent()) {
 		Hud_draw(canvas->hud);
 	}
 

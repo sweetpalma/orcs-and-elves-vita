@@ -236,5 +236,5 @@ In Orcs & Elves I (`Map 9: Dragon's Lair` / Gaya's hub, `6008`), the open cavern
    - Because `gayaHubActive` has no sharp shadow boundaries, `compatibleSpan()` and `compatibleSurfaceMax()` interpolate across adjacent stalactites, gold mounds, and Gaya's sprite layers instead of falling back to per-pixel `samplePointQ10()` on every sprite edge.
 4. **Stationary Partial Relight (`prevHubOriginal[]`):**
    - When the camera pose is unchanged while staggered 2D sprite animations (portals, crystals, Gaya's wiggle) invalidate `lastFrameSig`, `present()` skips `gather()` and Phase 0/1 and re-shades only the pixels where `original[i] != prevHubOriginal[i]` from the cached `coarseGrid`.
-5. **15 ms Timer & Horizon Clamp:**
-   - `src/vita/main_vita.c` runs one `Applet_Tick` per due frame without back-to-back catch-up renders, and `Render_drawFloorCeiling` clamps `halfH` to the viewport bottom when `gayaPitch` tilts the camera upward.
+5. **Catch-Up Rasterization Skip & Horizon Clamp:**
+   - When `OE_shouldSkipPresent()` is set on intermediate 15 ms catch-up ticks in `main_vita.c`, `Render_render` updates camera/floor/drunk state and skips 3D pixel rasterization so simulation runs at full 66.7 Hz speed without redundant software renders, and `Render_drawFloorCeiling` clamps `halfH` to the viewport bottom when `gayaPitch` tilts the camera upward.
